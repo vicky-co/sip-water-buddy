@@ -28,7 +28,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // If the graphics card cannot do WebGL (old drivers, virtual machines, remote desktop) fall back to software WebGL
 // instead of silently dropping to the cartoon look. Only this app's own local files are ever rendered.
 app.commandLine.appendSwitch('enable-unsafe-swiftshader');
-if (process.env.SIP_NO_GPU) app.disableHardwareAcceleration();
+if (process.env.SIP_NO_GPU || process.argv.includes('--no-gpu')) app.disableHardwareAcceleration();   // for graphics drivers that draw a black box
 if (isWin) app.setAppUserModelId('com.sip.waterbuddy');
 Menu.setApplicationMenu(null);
 
@@ -152,7 +152,7 @@ const autostartSupported = () => (isWin && app.isPackaged) || linuxInstalled();
 function applyLogin() {
   if (!autostartSupported()) return;
   try {
-    if (isWin) app.setLoginItemSettings({ openAtLogin: S.startAtLogin, path: process.execPath });
+    if (isWin) app.setLoginItemSettings({ openAtLogin: S.startAtLogin, path: process.env.PORTABLE_EXECUTABLE_FILE || process.execPath });   // the portable build runs from a temp folder; point at the real file
     else {
       const f = path.join(os.homedir(), '.config', 'autostart', 'sip-water-buddy.desktop');
       if (S.startAtLogin) {

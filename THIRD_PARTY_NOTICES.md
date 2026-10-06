@@ -9,6 +9,8 @@ Sip Water Buddy is MIT-licensed (see `LICENSE`). It builds on the following.
 | [Electron](https://github.com/electron/electron) 44.x | MIT | The application runtime. Electron itself contains Chromium and Node.js; their licences ship with Electron (`LICENSES.chromium.html` in the Windows download). |
 | [three.js](https://github.com/mrdoob/three.js) r169 | MIT (c) 2010-2024 three.js authors | 3D rendering and the glTF loader. Bundled into `src/renderer/vendor/three-bundle.js` at build time. |
 | [esbuild](https://github.com/evanw/esbuild) | MIT | Build-time only: creates the three.js bundle. Not shipped. |
+| [electron-builder](https://github.com/electron-userland/electron-builder) | MIT | Build-time only: creates the Windows installer and portable exe. Not shipped. |
+| [NSIS](https://nsis.sourceforge.io/) | zlib/libpng licence (with bzip2/lzma components) | The Windows installer program that electron-builder produces. |
 
 ## Assets (3D models and sounds)
 

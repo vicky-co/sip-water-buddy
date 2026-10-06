@@ -14,16 +14,19 @@ Releases are built by GitHub Actions when you push a version tag. Everyone then 
 1. Update `CHANGELOG.md`: move *Unreleased* entries under a new version heading with today's date.
 2. Bump the version: `npm version 2.1.0 --no-git-tag-version`, then commit (`git commit -am "Release 2.1.0"`).
 3. Tag and push: `git tag v2.1.0 && git push origin main v2.1.0`.
-4. The **Release** workflow checks the tag matches `package.json`, runs lint and unit tests, builds `sip-water-buddy-<version>-windows-x64.zip` and `…-linux.zip`,
-   writes `SHA256SUMS.txt`, and creates the GitHub release with generated notes. Edit the notes if you like.
+4. The **Release** workflow checks the tag matches `package.json`, runs lint and unit tests, then builds in parallel:
+   the **Windows installer** (`Sip-Water-Buddy-Setup-<version>.exe`) and **portable exe** on a GitHub Windows runner (with the water-drop icon embedded),
+   and the **Linux zip** on Ubuntu. A final job writes `SHA256SUMS.txt` and creates the GitHub release with generated notes. Edit the notes if you like.
 
 ## Building by hand
 ```bash
 npm ci
-npm run package        # writes both zips into dist/
+npm run package:linux   # dist/sip-water-buddy-<version>-linux.zip (any OS)
+npm run package:win     # dist/installer/*.exe (run on Windows)
+npm run package:win-zip # optional: the older zip + Install.bat route; works from Linux, not published by the workflow
 ```
-The Windows zip is assembled from the official Windows Electron build (works from Linux/macOS/WSL); it is not code-signed.
-Code-signing certificates are the way to remove the Windows "protected your PC" prompt.
+The Windows installer is not code-signed, so Windows shows its "protected your PC" prompt. A code-signing certificate (or the free
+[SignPath Foundation](https://signpath.org/) programme for open-source projects) removes it.
 
 ## Verifying a download
 ```bash

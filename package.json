@@ -1,15 +1,22 @@
 {
   "name": "sip-water-buddy",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Friendly desktop reminders from a hero and a pet: water, plus anything you add.",
   "main": "src/main/main.js",
   "private": true,
   "license": "MIT",
   "author": "Paresh Sethy (https://www.linkedin.com/in/pareshsethy1)",
   "homepage": "https://github.com/vicky-co/sip-water-buddy#readme",
-  "repository": { "type": "git", "url": "git+https://github.com/vicky-co/sip-water-buddy.git" },
-  "bugs": { "url": "https://github.com/vicky-co/sip-water-buddy/issues" },
-  "engines": { "node": ">=20" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vicky-co/sip-water-buddy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vicky-co/sip-water-buddy/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "prepare": "node scripts/build-vendor.js",
     "build:vendor": "node scripts/build-vendor.js",
@@ -17,13 +24,63 @@
     "lint": "node scripts/check-syntax.js",
     "test": "node tests/core.test.js",
     "test:e2e": "node scripts/run-e2e.js",
-    "package:win": "bash scripts/package-windows.sh",
+    "package:win": "electron-builder --win nsis portable --x64 --publish never",
     "package:linux": "bash scripts/package-linux.sh",
-    "package": "npm run package:win && npm run package:linux"
+    "package:win-zip": "bash scripts/package-windows.sh"
   },
   "devDependencies": {
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
     "three": "0.169.0"
+  },
+  "build": {
+    "appId": "com.sip.waterbuddy",
+    "productName": "Sip Water Buddy",
+    "copyright": "Copyright (c) 2026 Paresh Sethy",
+    "asar": false,
+    "directories": {
+      "output": "dist/installer"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icons/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sip Water Buddy",
+      "installerIcon": "assets/icons/icon.ico",
+      "uninstallerIcon": "assets/icons/icon.ico",
+      "include": "build/installer.nsh",
+      "artifactName": "Sip-Water-Buddy-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Sip-Water-Buddy-${version}-portable.${ext}"
+    }
   }
 }

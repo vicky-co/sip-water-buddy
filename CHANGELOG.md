@@ -4,6 +4,18 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-07
+### Added
+- **Windows installer** (`Sip-Water-Buddy-Setup-<version>.exe`, per-user, no admin rights) and a single-file **portable exe**, built by GitHub Actions on Windows with the water-drop icon. Uninstall from Settings → Apps.
+- `--no-gpu` command-line option for graphics drivers that draw a black box.
+
+### Changed
+- The release workflow builds Windows on a Windows runner and publishes the installer and portable exe. The older zip + `Install.bat` route remains available as `npm run package:win-zip` but is no longer published.
+- GitHub Actions moved to current major versions.
+
+### Fixed
+- Start-at-sign-in now points at the real file when running the portable build.
+
 ## [2.0.0] - 2026-10-06
 ### Added
 - **Settings window** with Characters, Reminders, Sounds and General tabs, replacing the tray dropdowns.
