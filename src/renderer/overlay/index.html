@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' data: blob:; media-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Sip</title>
+<link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+<div id="stage">
+  <div id="scene">
+    <div id="dog" class="sprite" title="Click to say hi">
+      <svg viewBox="0 0 90 70" width="90" height="70">
+        <ellipse cx="45" cy="67" rx="28" ry="3" fill="rgba(0,0,0,.25)"/>
+        <g id="dRoot">
+          <g id="dBL"><line class="dl" stroke="#A86F3C" x1="22" y1="44" x2="22" y2="65"/></g>
+          <g id="dFL"><line class="dl" stroke="#A86F3C" x1="58" y1="44" x2="58" y2="65"/></g>
+          <g id="dTail"><path d="M14 31 q-10 -6 -9 -18" stroke="#D9A066" stroke-width="5" fill="none" stroke-linecap="round"/></g>
+          <ellipse cx="40" cy="36" rx="28" ry="13" fill="#D9A066"/>
+          <ellipse cx="46" cy="42" rx="15" ry="5.5" fill="#F3D9B1"/>
+          <g id="dBR"><line class="dl" stroke="#D9A066" x1="27" y1="44" x2="27" y2="65"/></g>
+          <g id="dFR"><line class="dl" stroke="#D9A066" x1="63" y1="44" x2="63" y2="65"/></g>
+          <g id="dHead">
+            <path d="M58 22 q2 10 6 12" stroke="#C0392B" stroke-width="4" fill="none" stroke-linecap="round"/>
+            <ellipse cx="72" cy="19" rx="13" ry="11" fill="#D9A066"/>
+            <ellipse cx="82" cy="24" rx="7.5" ry="5.5" fill="#F3D9B1"/>
+            <circle cx="89" cy="21.5" r="2.6" fill="#222"/>
+            <ellipse id="dEye" cx="75" cy="16" rx="1.9" ry="2" fill="#222"/>
+            <path d="M64 9 q-7 2 -6 15 q6 -3 9 -11 z" fill="#8B5A2B"/>
+            <path id="dMouth" d="M79 28 q4 2 8 0" stroke="#222" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+            <path id="dTongue" d="M82 28.5 q1.5 6 4.5 1" fill="#E86A7A"/>
+            <circle id="dBall" cx="87" cy="29" r="5.5" fill="#CDE84A" stroke="rgba(0,0,0,.4)" stroke-width=".8"/>
+          </g>
+        </g>
+      </svg>
+      <div id="dog3dWrap"><canvas id="dog3d" width="150" height="120"></canvas><div id="dogBall3d"></div></div>
+    </div>
+
+    <div id="fig" class="sprite" title="Click for a style move">
+      <svg viewBox="-40 0 80 160" width="100" height="200">
+        <ellipse id="shadow" cx="0" cy="151" rx="20" ry="4.5" fill="rgba(0,0,0,.28)"/>
+        <g id="body">
+          <g id="legB">
+            <line class="l" stroke="#22324F" x1="0" y1="84" x2="0" y2="116"/>
+            <g id="shinB"><line class="l" stroke="#22324F" x1="0" y1="116" x2="0" y2="145"/><line class="shoe" x1="-3" y1="148" x2="10" y2="148"/></g>
+          </g>
+          <g id="armB">
+            <line class="l" stroke="#871C23" x1="0" y1="45" x2="0" y2="65"/>
+            <g id="foreB"><line class="l" stroke="#C99569" x1="0" y1="66" x2="0" y2="84"/></g>
+          </g>
+          <rect x="-12" y="37" width="24" height="50" rx="10" fill="#B3262E"/>
+          <rect x="3" y="40" width="8" height="40" rx="3" fill="#F7F7F7"/>
+          <path d="M2 39 L8 52 L3 52 Z" fill="#8E1D24"/>
+          <rect x="-12" y="79" width="24" height="9" rx="4" fill="#2B3F63"/>
+          <rect x="2" y="80" width="6" height="5" rx="1" fill="#D9B44A"/>
+          <g id="head">
+            <rect x="-3.5" y="28" width="7" height="12" rx="3" fill="#C99569"/>
+            <circle cx="0" cy="19" r="14" fill="#DDA77A"/>
+            <path d="M-14.5 21 A14.5 14.5 0 0 1 4 4.6 Q10 -2 16 5 Q10 4 8 8 Q3 6 -2 10 Q-7 13 -8 22 Z" fill="#1E1714"/>
+            <circle cx="-4" cy="21" r="3" fill="#C99569"/>
+            <ellipse id="eye" cx="8" cy="17.5" rx="1.9" ry="2.2" fill="#1E1714"/>
+            <path id="mouth" d="M6 26 q3 2 6 -1" stroke="#5A2A1E" stroke-width="1.7" fill="none" stroke-linecap="round"/>
+            <g id="shadesFace">
+              <line x1="3" y1="15" x2="-7" y2="16.5" stroke="#111" stroke-width="1.6"/>
+              <path d="M3 13.5 h11 q0 7 -5.5 7 q-5.5 0 -5.5 -7 z" fill="#111"/>
+              <path d="M5 15 l3 0" stroke="#666" stroke-width="1" stroke-linecap="round"/>
+            </g>
+          </g>
+          <g id="legF">
+            <line class="l" stroke="#2B3F63" x1="0" y1="84" x2="0" y2="116"/>
+            <g id="shinF"><line class="l" stroke="#2B3F63" x1="0" y1="116" x2="0" y2="145"/><line class="shoe" x1="-3" y1="148" x2="10" y2="148"/></g>
+          </g>
+          <g id="armF">
+            <line class="l" stroke="#B3262E" x1="0" y1="45" x2="0" y2="65"/>
+            <g id="foreF">
+              <line class="l" stroke="#DDA77A" x1="0" y1="66" x2="0" y2="84"/>
+              <g id="cup">
+                <path d="M-6 82 L-5 97 H5 L6 82 Z" fill="rgba(225,242,250,.95)" stroke="#16324F" stroke-width="1.4"/>
+                <path d="M-4.6 90 L-4.3 96 H4.3 L4.6 90 Z" fill="#5BB8E2"/>
+              </g>
+              <g id="shadesHand">
+                <g id="shadesSpin">
+                  <circle cx="-5.5" cy="89" r="4.6" fill="#111"/>
+                  <circle cx="5.5" cy="89" r="4.6" fill="#111"/>
+                  <line x1="-1.5" y1="88" x2="1.5" y2="88" stroke="#111" stroke-width="1.6"/>
+                </g>
+              </g>
+            </g>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <canvas id="hero3d" width="200" height="420"></canvas>
+    <div id="ball"></div>
+  </div>
+
+  <div id="bubble" hidden>
+    <button id="gearBtn" class="mini" title="Settings" aria-label="Open settings">⚙</button>
+    <button id="muteBtn" class="mini" title="Sound on/off" aria-label="Sound on or off">🔊</button>
+    <p id="bText"></p>
+    <p id="bNote" hidden></p>
+    <div id="bActions" hidden>
+      <div class="row" id="waterBtns">
+        <button id="yes">I drank 💧</button>
+        <button id="no" class="ghost">Not yet</button>
+        <button id="skip" class="ghost">Skip</button>
+      </div>
+      <div class="row" id="remBtns" hidden>
+        <button id="remDone">Done ✓</button>
+        <button id="remS10" class="ghost">+10 min</button>
+        <button id="remS60" class="ghost">+1 hour</button>
+        <button id="remSkip" class="ghost">Skip</button>
+      </div>
+      <div class="row" id="helloBtns" hidden>
+        <button id="helloClose">Close</button>
+      </div>
+      <div class="row play" id="playRow">
+        <button class="chip" data-play="fetch" data-needs="both" id="chipFetch">🎯 Play fetch</button>
+        <button class="chip" data-play="pet" data-needs="both" id="chipPet">🐾 Pet</button>
+        <button class="chip" data-play="dance" data-needs="any">🕺 Dance</button>
+        <button class="chip" data-play="style" data-needs="hero">😎 Style</button>
+        <button class="chip" id="tricksBtn" data-needs="pet">🐾 Tricks ▾</button>
+      </div>
+      <div class="row play" id="tricks" hidden>
+        <button class="chip" data-play="chase" data-needs="pet">🌀 Chase tail</button>
+        <button class="chip" data-play="roll" data-needs="pet">🙃 Roll over</button>
+        <button class="chip" data-play="dead" data-needs="both">💥 Play dead</button>
+        <button class="chip" data-play="five" data-needs="both">✋ High five</button>
+        <button class="chip" data-play="beg" data-needs="both">🦴 Beg</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="aim" hidden>
+  <div id="reticle"></div>
+  <div id="aimHint">🎯 Click anywhere on any screen to throw the ball &nbsp;<span class="spd"><span id="speedLbl">Pet</span>: <button data-speed="0.6" title="Slow">🐢</button><button data-speed="1" title="Normal">🐕</button><button data-speed="1.5" title="Fast">🐆</button><button data-speed="2.2" title="Zoomies">🚀</button></span>
+    &nbsp;<button id="aimCancel" class="ghost">Cancel</button></div>
+</div>
+<script src="../vendor/three-bundle.js"></script>
+<script src="avatar3d.js"></script>
+<script src="pet3d.js"></script>
+<script src="overlay.js"></script>
+</body>
+</html>

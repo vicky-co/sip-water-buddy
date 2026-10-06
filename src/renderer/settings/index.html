@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'; font-src 'none'; connect-src 'none'">
+<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sip Settings</title>
+<link rel="stylesheet" href="settings.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="side" aria-label="Settings sections">
+    <div class="brand"><span class="logo" aria-hidden="true">💧</span><span>Sip</span></div>
+    <div role="tablist" aria-orientation="vertical" id="tabs">
+      <button type="button" role="tab" id="tab-characters" aria-controls="panel-characters" aria-selected="true" data-tab="characters"><span aria-hidden="true">🧑‍🚀</span> Characters</button>
+      <button type="button" role="tab" id="tab-reminders" aria-controls="panel-reminders" aria-selected="false" tabindex="-1" data-tab="reminders"><span aria-hidden="true">⏰</span> Reminders</button>
+      <button type="button" role="tab" id="tab-sounds" aria-controls="panel-sounds" aria-selected="false" tabindex="-1" data-tab="sounds"><span aria-hidden="true">🔊</span> Sounds</button>
+      <button type="button" role="tab" id="tab-general" aria-controls="panel-general" aria-selected="false" tabindex="-1" data-tab="general"><span aria-hidden="true">⚙️</span> General</button>
+    </div>
+    <p class="side-foot" id="sideFoot"></p>
+  </nav>
+
+  <main>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+
+    <!-- ===== Characters ===== -->
+    <section role="tabpanel" id="panel-characters" aria-labelledby="tab-characters">
+      <h1>Characters</h1>
+      <div class="card">
+        <h2>Who shows up?</h2>
+        <p class="hint">You can hide one of them, but never both.</p>
+        <div class="choices" role="radiogroup" aria-label="Who shows up" id="showGroup">
+          <label class="choice"><input type="radio" name="show" value="both"><span class="ctitle">Hero and pet</span><span class="cdesc">Both appear together</span></label>
+          <label class="choice"><input type="radio" name="show" value="hero"><span class="ctitle">Hero only</span><span class="cdesc">Hide the pet</span></label>
+          <label class="choice"><input type="radio" name="show" value="pet"><span class="ctitle">Pet only</span><span class="cdesc">Hide the hero</span></label>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="card" id="heroCard">
+          <h2>Hero</h2>
+          <label class="field"><span>Name</span><input id="heroName" type="text" maxlength="24" autocomplete="off" spellcheck="false"></label>
+          <fieldset><legend>Look</legend><div id="heroLooks" class="list" role="radiogroup" aria-label="Hero look"></div></fieldset>
+          <button type="button" class="btn" id="addAvatar">Add a 3D avatar…</button>
+          <p class="hint small">Any rigged human model in .glb format (for example from Avaturn, Ready Player Me or Mixamo).</p>
+        </div>
+        <div class="card" id="petCard">
+          <h2>Pet</h2>
+          <label class="field"><span>Name</span><input id="petName" type="text" maxlength="24" autocomplete="off" spellcheck="false"></label>
+          <fieldset><legend>Look</legend><div id="petLooks" class="list" role="radiogroup" aria-label="Pet look"></div></fieldset>
+          <button type="button" class="btn" id="addPet">Add a 3D pet…</button>
+          <p class="hint small">Any animal model in .glb format. It is sized and turned to fit automatically.</p>
+          <label class="check"><input type="checkbox" id="petFlip"> <span>Face the other way</span></label>
+          <fieldset><legend>Speed when playing</legend>
+            <div class="seg" role="radiogroup" aria-label="Pet speed" id="petSpeed">
+              <label><input type="radio" name="speed" value="0.6"><span>Slow</span></label>
+              <label><input type="radio" name="speed" value="1"><span>Normal</span></label>
+              <label><input type="radio" name="speed" value="1.5"><span>Fast</span></label>
+              <label><input type="radio" name="speed" value="2.2"><span>Zoomies</span></label>
+            </div>
+          </fieldset>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Reminders ===== -->
+    <section role="tabpanel" id="panel-reminders" aria-labelledby="tab-reminders" hidden>
+      <h1>Reminders</h1>
+      <div class="card" id="waterCard">
+        <div class="rowbetween">
+          <h2>💧 Water reminder</h2>
+          <label class="switch"><input type="checkbox" id="waterOn"><span class="track" aria-hidden="true"></span><span class="sr">Water reminder on</span></label>
+        </div>
+        <div id="waterBody">
+          <div class="fields">
+            <label class="field"><span>Remind me every</span><span class="inline"><input id="waterEvery" type="number" min="1" max="720" inputmode="numeric"> <span>minutes</span></span></label>
+            <label class="field"><span>Daily goal</span><span class="inline"><input id="waterGoal" type="number" min="1" max="30" inputmode="numeric"> <span>glasses</span></span></label>
+          </div>
+          <div class="chips" id="waterChips" aria-label="Common intervals"></div>
+          <div class="today">
+            <span id="waterToday"></span>
+            <span class="btns">
+              <button type="button" class="btn small" id="waterMinus" aria-label="One fewer glass today">−</button>
+              <button type="button" class="btn small" id="waterPlus" aria-label="One more glass today">+</button>
+              <button type="button" class="btn small" id="waterReset">Reset today</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="addCard">
+        <h2 id="formTitle">Add a reminder</h2>
+        <label class="field"><span>What should I remind you about?</span><input id="remTitle" type="text" maxlength="60" autocomplete="off" placeholder="For example: Stand up and stretch"></label>
+        <div class="quick"><span class="muted">Quick add:</span>
+          <span class="chips" id="quickChips">
+            <button type="button" class="chip" data-quick="1">In 1 min</button>
+            <button type="button" class="chip" data-quick="10">In 10 min</button>
+            <button type="button" class="chip" data-quick="30">In 30 min</button>
+            <button type="button" class="chip" data-quick="60">In 1 hour</button>
+            <button type="button" class="chip" data-quick="tomorrow">Tomorrow 9:00</button>
+          </span>
+        </div>
+        <fieldset><legend>Or choose exactly when</legend>
+          <div class="seg" role="radiogroup" aria-label="Schedule type" id="kindSeg">
+            <label><input type="radio" name="kind" value="once" checked><span>One time</span></label>
+            <label><input type="radio" name="kind" value="daily"><span>Every day</span></label>
+            <label><input type="radio" name="kind" value="weekly"><span>Certain days</span></label>
+            <label><input type="radio" name="kind" value="interval"><span>Repeating</span></label>
+          </div>
+        </fieldset>
+        <div class="fields" id="kind-once">
+          <label class="field"><span>Date</span><input id="remDate" type="date"></label>
+          <label class="field"><span>Time</span><input id="remTimeOnce" type="time"></label>
+        </div>
+        <div class="fields" id="kind-daily" hidden>
+          <label class="field"><span>Time</span><input id="remTimeDaily" type="time" value="09:00"></label>
+        </div>
+        <div id="kind-weekly" hidden>
+          <fieldset><legend>Days</legend><div class="days" id="remDays" role="group" aria-label="Days of the week"></div></fieldset>
+          <div class="fields"><label class="field"><span>Time</span><input id="remTimeWeekly" type="time" value="09:00"></label></div>
+        </div>
+        <div class="fields" id="kind-interval" hidden>
+          <label class="field"><span>Every</span><span class="inline"><input id="remEvery" type="number" min="1" max="10080" value="60" inputmode="numeric">
+            <select id="remUnit" aria-label="Unit"><option value="1">minutes</option><option value="60" selected>hours</option></select></span></label>
+        </div>
+        <label class="field"><span>Note (optional)</span><input id="remNote" type="text" maxlength="140" autocomplete="off"></label>
+        <p id="formError" class="error" role="alert" hidden></p>
+        <div class="btns">
+          <button type="button" class="btn primary" id="remSubmit">Add reminder</button>
+          <button type="button" class="btn" id="remCancel" hidden>Cancel</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="rowbetween"><h2>Your reminders</h2><button type="button" class="btn small" id="clearDone" hidden>Clear completed</button></div>
+        <ul id="remList" class="rems"></ul>
+        <p id="remEmpty" class="muted">Nothing yet. Add your first reminder above.</p>
+      </div>
+    </section>
+
+    <!-- ===== Sounds ===== -->
+    <section role="tabpanel" id="panel-sounds" aria-labelledby="tab-sounds" hidden>
+      <h1>Sounds</h1>
+      <div class="card">
+        <h2>Volume</h2>
+        <label class="check"><input type="checkbox" id="muteAll"> <span>Mute everything</span></label>
+        <label class="field"><span>Volume <output id="volOut">60</output>%</span><input id="vol" type="range" min="0" max="100" step="5"></label>
+        <label class="check"><input type="checkbox" id="sndVoice"> <span>Hero voice</span></label>
+        <label class="check"><input type="checkbox" id="sndPet"> <span>Pet sounds</span></label>
+        <label class="check"><input type="checkbox" id="sndFx"> <span>Effects and music</span></label>
+      </div>
+      <div class="card">
+        <h2>Pet sound</h2>
+        <div id="petSounds" class="list" role="radiogroup" aria-label="Pet sound"></div>
+        <button type="button" class="btn" id="addSound">Add a sound…</button>
+        <p class="hint small">.mp3, .wav or .ogg files work. Everything is stored on this computer only.</p>
+      </div>
+    </section>
+
+    <!-- ===== General ===== -->
+    <section role="tabpanel" id="panel-general" aria-labelledby="tab-general" hidden>
+      <h1>General</h1>
+      <div class="card">
+        <h2>Start-up</h2>
+        <label class="check" id="loginRow"><input type="checkbox" id="startAtLogin"> <span>Start Sip when I sign in</span></label>
+        <p class="hint small" id="loginNote" hidden>Available once Sip is installed with its installer script.</p>
+      </div>
+      <div class="card">
+        <h2>Try it</h2>
+        <div class="btns"><button type="button" class="btn primary" id="askNow">Show me now</button><button type="button" class="btn" id="openLog">Open log file</button></div>
+      </div>
+      <div class="card">
+        <h2>Status</h2>
+        <dl class="diag"><dt>3D hero</dt><dd id="diagHero"></dd><dt>3D pet</dt><dd id="diagPet"></dd><dt>Version</dt><dd id="diagVer"></dd></dl>
+      </div>
+      <div class="card" id="aboutCard">
+        <h2>About Sip</h2>
+        <p class="hint" id="aboutLine"></p>
+        <div class="btns">
+          <a class="btn primary" href="#" data-link="repo">⭐ Star Sip on GitHub</a>
+          <a class="btn" href="#" data-link="linkedin">🤝 Connect on LinkedIn</a>
+          <a class="btn" href="#" data-link="issues">🐞 Report a bug or idea</a>
+          <a class="btn" href="#" data-link="github">👤 More from the author</a>
+        </div>
+        <p class="hint small">Links open in your normal browser. Sip itself never goes online.</p>
+      </div>
+      <div class="card">
+        <h2>Privacy and safety</h2>
+        <ul class="plain">
+          <li>Everything stays on this computer. Sip never connects to the internet; all network requests are blocked.</li>
+          <li>Models and sounds you add are copied into Sip's own folder and are only ever read, never run.</li>
+          <li>Settings are stored in your user profile with owner-only permissions.</li>
+        </ul>
+      </div>
+    </section>
+    <footer class="brandbar">
+      <span class="made">💧 Sip is free and open source · made by <strong id="brandAuthor">Paresh Sethy</strong></span>
+      <span class="links">
+        <a href="#" data-link="repo">GitHub</a>
+        <a href="#" data-link="linkedin">Connect on LinkedIn</a>
+        <a href="#" data-link="issues">Report a bug</a>
+      </span>
+    </footer>
+  </main>
+</div>
+<script src="settings.js"></script>
+</body>
+</html>

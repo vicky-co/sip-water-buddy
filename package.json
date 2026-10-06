@@ -1,0 +1,29 @@
+{
+  "name": "sip-water-buddy",
+  "version": "2.0.0",
+  "description": "Friendly desktop reminders from a hero and a pet: water, plus anything you add.",
+  "main": "src/main/main.js",
+  "private": true,
+  "license": "MIT",
+  "author": "Paresh Sethy (https://www.linkedin.com/in/pareshsethy1)",
+  "homepage": "https://github.com/vicky-co/sip-water-buddy#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/vicky-co/sip-water-buddy.git" },
+  "bugs": { "url": "https://github.com/vicky-co/sip-water-buddy/issues" },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "prepare": "node scripts/build-vendor.js",
+    "build:vendor": "node scripts/build-vendor.js",
+    "start": "node scripts/start.js",
+    "lint": "node scripts/check-syntax.js",
+    "test": "node tests/core.test.js",
+    "test:e2e": "node scripts/run-e2e.js",
+    "package:win": "bash scripts/package-windows.sh",
+    "package:linux": "bash scripts/package-linux.sh",
+    "package": "npm run package:win && npm run package:linux"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "esbuild": "^0.25.0",
+    "three": "0.169.0"
+  }
+}

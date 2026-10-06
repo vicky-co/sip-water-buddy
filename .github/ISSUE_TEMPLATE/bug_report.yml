@@ -1,0 +1,40 @@
+name: Bug report
+description: Something is not working as expected
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Sip version
+      description: Settings → General → Status
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows 11, Windows 10, Ubuntu / Linux, macOS (from source), Other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open Settings\n2. ..."
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Settings → General → Open log file. Paste the last lines.
+      render: text
+  - type: textarea
+    id: shots
+    attributes:
+      label: Screenshots or a short screen recording (optional)

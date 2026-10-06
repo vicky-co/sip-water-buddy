@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest an idea
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like Sip to do?
+      description: Describe the need first; the solution can come after.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea (optional)
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Fits the project's principles
+      options:
+        - label: It does not need network access or telemetry
+          required: true
