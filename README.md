@@ -16,6 +16,8 @@ Sip is a small desktop companion. A 3D hero (and a pet) walk onto your screen wh
 showing off, and **stay until you answer**. Water is built in; add any other reminder you like, with dates and times.
 It is free, open source, and never connects to the internet.
 
+**Website:** <https://vicky-co.github.io/sip-water-buddy/>
+
 | Characters | Reminders | On your desktop |
 |---|---|---|
 | ![Characters settings](docs/screenshots/settings-characters.png) | ![Reminders settings](docs/screenshots/settings-reminders-full.png) | ![A reminder on screen](docs/screenshots/overlay-reminder.png) |

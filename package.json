@@ -3,14 +3,11 @@
   "version": "2.0.1",
   "description": "Desktop water and break reminder with a 3D hero and pet. Offline, no telemetry.",
   "keywords": ["water-reminder", "hydration", "desktop-pet", "reminder", "electron", "threejs", "productivity"],
-  "homepage": "https://vicky-co.github.io/sip-water-buddy",
-  "repository": "github:vicky-co/sip-water-buddy",
-  "bugs": "https://github.com/vicky-co/sip-water-buddy/issues"
+  "homepage": "https://vicky-co.github.io/sip-water-buddy/",
   "main": "src/main/main.js",
   "private": true,
   "license": "MIT",
   "author": "Paresh Sethy (https://www.linkedin.com/in/pareshsethy1)",
-  "homepage": "https://github.com/vicky-co/sip-water-buddy#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vicky-co/sip-water-buddy.git"

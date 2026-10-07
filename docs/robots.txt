@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://vicky-co.github.io/sip-water-buddy/sitemap.xml
