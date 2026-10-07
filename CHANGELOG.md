@@ -3,6 +3,8 @@ All notable changes to this project are documented here. The format follows [Kee
 and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- **`uninstall.sh` for Linux** (installed to `~/.local/share/sip-water-buddy/` and included in the Linux zip): removes the program, launcher, start-at-sign-in entry, saved data and logs; `--keep-data` keeps your settings. The README now documents complete removal on Windows and Linux.
 
 ## [2.0.2] - 2026-10-07
 ### Fixed

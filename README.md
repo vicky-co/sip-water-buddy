@@ -58,6 +58,26 @@ unzip sip-water-buddy-<version>-linux.zip && cd sip-water-buddy && ./install.sh
 Needs Node.js 20+ (the installer offers to install it) and internet once, to fetch the Electron runtime.
 Look for the water-drop icon in the top bar. Tested on Ubuntu 24.04 (GNOME); Sip runs through XWayland so it can stay on top.
 
+### Uninstall completely
+
+**Windows (installer):** Settings → Apps → Installed apps → **Sip Water Buddy** → Uninstall. Then delete `%APPDATA%\sip-water-buddy` to remove your
+reminders and settings. **Portable exe:** quit Sip from the tray icon, delete the `.exe`, and delete `%APPDATA%\sip-water-buddy`.
+**Windows (zip with `Install.bat`):** run `Uninstall.bat`; it removes the program, shortcuts, start-at-sign-in and your data.
+
+**Ubuntu / Linux:** run the uninstaller that was installed with Sip:
+```bash
+~/.local/share/sip-water-buddy/uninstall.sh          # asks first, then removes everything
+~/.local/share/sip-water-buddy/uninstall.sh --keep-data   # keep your reminders and settings
+```
+It stops Sip and deletes the program, the app-grid launcher, the start-at-sign-in entry, your data and the logs. It only touches your home folder.
+If you no longer have the script, remove these by hand after choosing **Quit** from the tray icon:
+```bash
+pkill -f "electron.*sip-water-buddy"
+rm -rf ~/.local/share/sip-water-buddy ~/.config/sip-water-buddy ~/.cache/sip-water-buddy.log \
+       ~/.local/share/applications/sip-water-buddy.desktop ~/.config/autostart/sip-water-buddy.desktop
+```
+(Sip only installs Node.js if you let `install.sh` do it; remove that separately with `sudo apt remove nodejs npm` if you want.)
+
 > **macOS** is not packaged or tested. The code avoids platform-specific assumptions, so running from source may work; contributions welcome.
 
 ## A two-minute tour
