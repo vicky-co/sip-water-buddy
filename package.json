@@ -1,7 +1,11 @@
 {
   "name": "sip-water-buddy",
   "version": "2.0.1",
-  "description": "Friendly desktop reminders from a hero and a pet: water, plus anything you add.",
+  "description": "Desktop water and break reminder with a 3D hero and pet. Offline, no telemetry.",
+  "keywords": ["water-reminder", "hydration", "desktop-pet", "reminder", "electron", "threejs", "productivity"],
+  "homepage": "https://vicky-co.github.io/sip-water-buddy",
+  "repository": "github:vicky-co/sip-water-buddy",
+  "bugs": "https://github.com/vicky-co/sip-water-buddy/issues"
   "main": "src/main/main.js",
   "private": true,
   "license": "MIT",
