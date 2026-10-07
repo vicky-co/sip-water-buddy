@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v2.1.0 to build the Windows installer, the portable Windows exe and the Linux zip, then publish a GitHub release.
+# Push a tag like v2.1.0 to build the Windows installer, the portable Windows exe, the Windows folder zip and the Linux zip, then publish a GitHub release.
 on:
   push:
     tags: ['v*']
@@ -25,6 +25,8 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run package:linux
+      - name: Windows folder zip (run without installing)
+        run: npm run package:win-zip
       - uses: actions/upload-artifact@v7
         with:
           name: linux

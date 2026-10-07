@@ -49,6 +49,18 @@ It keeps running when you close any terminal, and starts when you sign in (switc
 your reminders and settings stay in `%APPDATA%\sip-water-buddy` (delete that folder to remove them too).
 
 Prefer no installer? Download **`Sip-Water-Buddy-<version>-portable.exe`**: a single file you can run from anywhere (it starts a little slower).
+
+#### Windows without an installer or unsigned `.exe` (blocked PCs)
+Some PCs block downloaded programs from an "unknown publisher". Sip is unsigned, so use one of these folder options instead:
+
+1. **Run straight from the project folder (best when `.exe` downloads are blocked).** Install [Node.js](https://nodejs.org) 20+ (LTS), then either
+   *Code → Download ZIP* on this page and extract it, or `git clone https://github.com/vicky-co/sip-water-buddy`.
+   Double-click **`Start Sip (Windows, from folder).bat`** in that folder. The first run sets itself up (internet needed, about a minute); after that it starts at once.
+   Nothing is installed and no downloaded `.exe` is run: Node.js fetches the Electron runtime itself. Or type `npm install` then `npm start` in a terminal.
+2. **Prebuilt folder.** Download **`sip-water-buddy-<version>-windows-x64.zip`** from the release, right-click it → Properties → tick **Unblock** → OK,
+   then Extract All and double-click **`Start Sip.bat`** (or `Sip Water Buddy.exe`). No installation and no Node.js needed. Delete the folder to remove it.
+
+Group policies that block *all* unsigned programs (for example AppLocker) can still stop either route; ask the PC's administrator to allow the folder.
 Windows support is newer and has had less testing than Linux: please [report anything odd](https://github.com/vicky-co/sip-water-buddy/issues/new/choose).
 
 ### Ubuntu / Linux

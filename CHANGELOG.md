@@ -4,6 +4,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 ### Added
+- **Windows without an installer**: `Start Sip (Windows, from folder).bat` runs Sip straight from the project folder (Node.js fetches Electron, so no downloaded `.exe` is involved), and the release now also includes `sip-water-buddy-<version>-windows-x64.zip`, a prebuilt folder with `Start Sip.bat`. For PCs that block unsigned installers.
 - **`uninstall.sh` for Linux** (installed to `~/.local/share/sip-water-buddy/` and included in the Linux zip): removes the program, launcher, start-at-sign-in entry, saved data and logs; `--keep-data` keeps your settings. The README now documents complete removal on Windows and Linux.
 
 ## [2.0.2] - 2026-10-07
