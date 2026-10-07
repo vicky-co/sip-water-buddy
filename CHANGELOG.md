@@ -4,6 +4,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-10-07
+### Fixed
+- **Ubuntu (Wayland): only the tray icon appeared, no hero or pet.** The X11 display mode is now passed on the real command line in every launch path (installer, start script, autostart, `npm start`), and Sip restarts itself once with it if it was missing.
+- Settings opens if the character window cannot load, and `sip.log` now records the session type, display and launch arguments.
+
 ## [2.0.1] - 2026-10-07
 ### Added
 - **Windows installer** (`Sip-Water-Buddy-Setup-<version>.exe`, per-user, no admin rights) and a single-file **portable exe**, built by GitHub Actions on Windows with the water-drop icon. Uninstall from Settings → Apps.
