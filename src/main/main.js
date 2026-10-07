@@ -21,7 +21,12 @@ const LINKS = Object.freeze({ repo: Brand.repoUrl, issues: Brand.issuesUrl, gith
 // ---------- Chromium switches ----------
 if (isLinux) {
   // Ubuntu runs GNOME on Wayland, which does not let apps stay on top or move freely: use XWayland (X11) instead.
-  app.commandLine.appendSwitch('ozone-platform', 'x11');
+  // The display backend is chosen before any script runs, so it must be on the real command line (a switch added here is too late
+  // on newer Electron, which then picks Wayland and the characters never appear). If it is missing, restart once with it.
+  if (!process.argv.some(a => a.startsWith('--ozone-platform'))) {
+    app.relaunch({ args: process.argv.slice(1).concat('--ozone-platform=x11') });
+    app.exit(0);
+  }
   app.commandLine.appendSwitch('enable-transparent-visuals');
 }
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -157,7 +162,7 @@ function applyLogin() {
       const f = path.join(os.homedir(), '.config', 'autostart', 'sip-water-buddy.desktop');
       if (S.startAtLogin) {
         fs.mkdirSync(path.dirname(f), { recursive: true });
-        fs.writeFileSync(f, `[Desktop Entry]\nType=Application\nName=Sip Water Buddy\nExec="${process.execPath}" "${APP_DIR}" --no-sandbox\nIcon=${path.join(APP_DIR, 'assets', 'icons', 'icon.png')}\nX-GNOME-Autostart-enabled=true\n`);
+        fs.writeFileSync(f, `[Desktop Entry]\nType=Application\nName=Sip Water Buddy\nExec="${process.execPath}" "${APP_DIR}" --no-sandbox --ozone-platform=x11\nIcon=${path.join(APP_DIR, 'assets', 'icons', 'icon.png')}\nX-GNOME-Autostart-enabled=true\n`);
       } else fs.rmSync(f, { force: true });
     }
   } catch (e) { console.error('Could not change start-at-sign-in:', e); }
@@ -215,7 +220,9 @@ function createOverlay() {
     try { overlay.destroy(); } catch (e) { /* already gone */ }
     setTimeout(createOverlay, 1500);
   });
+  overlay.webContents.on('did-fail-load', (_e, code, desc) => { console.error('Character window failed to load:', code, desc); openSettings(); });
   overlay.webContents.once('did-finish-load', () => {
+    console.log('Character window loaded.');
     pushOverlay();
     if (S.water.enabled) setTimeout(() => appear('intro', { type: 'water' }), 1200);
   });
@@ -412,6 +419,7 @@ app.whenReady().then(() => {
   load();
   waterNextAt = Date.now() + S.water.interval * 60000;
   console.log(`Sip started (${process.platform}, Electron ${process.versions.electron}). Water ${S.water.enabled ? 'every ' + S.water.interval + ' min' : 'off'}; ${S.reminders.length} custom reminder(s).`);
+  console.log(`Session: type=${process.env.XDG_SESSION_TYPE || '?'} wayland=${process.env.WAYLAND_DISPLAY || '-'} display=${process.env.DISPLAY || '-'} args=${process.argv.slice(1).join(' ')}`);
   applyLogin();
   tray = new Tray(ICON);
   if (isWin) tray.on('click', () => tray.popUpContextMenu());
