@@ -54,3 +54,4 @@ echo
 echo "Installed to $APP"
 echo "Look for the water-drop icon in the top bar: double-click it, or choose 'Open Settings...'."
 echo "You can delete the folder you downloaded."
+echo "To remove Sip completely later: $APP/uninstall.sh"

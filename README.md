@@ -49,6 +49,18 @@ It keeps running when you close any terminal, and starts when you sign in (switc
 your reminders and settings stay in `%APPDATA%\sip-water-buddy` (delete that folder to remove them too).
 
 Prefer no installer? Download **`Sip-Water-Buddy-<version>-portable.exe`**: a single file you can run from anywhere (it starts a little slower).
+
+#### Windows without an installer or unsigned `.exe` (blocked PCs)
+Some PCs block downloaded programs from an "unknown publisher". Sip is unsigned, so use one of these folder options instead:
+
+1. **Run straight from the project folder (best when `.exe` downloads are blocked).** Install [Node.js](https://nodejs.org) 20+ (LTS), then either
+   *Code → Download ZIP* on this page and extract it, or `git clone https://github.com/vicky-co/sip-water-buddy`.
+   Double-click **`Start Sip (Windows, from folder).bat`** in that folder. The first run sets itself up (internet needed, about a minute); after that it starts at once.
+   Nothing is installed and no downloaded `.exe` is run: Node.js fetches the Electron runtime itself. Or type `npm install` then `npm start` in a terminal.
+2. **Prebuilt folder.** Download **`sip-water-buddy-<version>-windows-x64.zip`** from the release, right-click it → Properties → tick **Unblock** → OK,
+   then Extract All and double-click **`Start Sip.bat`** (or `Sip Water Buddy.exe`). No installation and no Node.js needed. Delete the folder to remove it.
+
+Group policies that block *all* unsigned programs (for example AppLocker) can still stop either route; ask the PC's administrator to allow the folder.
 Windows support is newer and has had less testing than Linux: please [report anything odd](https://github.com/vicky-co/sip-water-buddy/issues/new/choose).
 
 ### Ubuntu / Linux
@@ -57,6 +69,26 @@ unzip sip-water-buddy-<version>-linux.zip && cd sip-water-buddy && ./install.sh
 ```
 Needs Node.js 20+ (the installer offers to install it) and internet once, to fetch the Electron runtime.
 Look for the water-drop icon in the top bar. Tested on Ubuntu 24.04 (GNOME); Sip runs through XWayland so it can stay on top.
+
+### Uninstall completely
+
+**Windows (installer):** Settings → Apps → Installed apps → **Sip Water Buddy** → Uninstall. Then delete `%APPDATA%\sip-water-buddy` to remove your
+reminders and settings. **Portable exe:** quit Sip from the tray icon, delete the `.exe`, and delete `%APPDATA%\sip-water-buddy`.
+**Windows (zip with `Install.bat`):** run `Uninstall.bat`; it removes the program, shortcuts, start-at-sign-in and your data.
+
+**Ubuntu / Linux:** run the uninstaller that was installed with Sip:
+```bash
+~/.local/share/sip-water-buddy/uninstall.sh          # asks first, then removes everything
+~/.local/share/sip-water-buddy/uninstall.sh --keep-data   # keep your reminders and settings
+```
+It stops Sip and deletes the program, the app-grid launcher, the start-at-sign-in entry, your data and the logs. It only touches your home folder.
+If you no longer have the script, remove these by hand after choosing **Quit** from the tray icon:
+```bash
+pkill -f "electron.*sip-water-buddy"
+rm -rf ~/.local/share/sip-water-buddy ~/.config/sip-water-buddy ~/.cache/sip-water-buddy.log \
+       ~/.local/share/applications/sip-water-buddy.desktop ~/.config/autostart/sip-water-buddy.desktop
+```
+(Sip only installs Node.js if you let `install.sh` do it; remove that separately with `sudo apt remove nodejs npm` if you want.)
 
 > **macOS** is not packaged or tested. The code avoids platform-specific assumptions, so running from source may work; contributions welcome.
 

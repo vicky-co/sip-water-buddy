@@ -9,7 +9,8 @@ INSTALL (no other software needed)
      If Windows says "protected your PC": More info > Run anyway
      (the app is not code-signed, so Windows shows this for any new program).
 Sip starts straight away, appears in the Start menu, and starts by itself when you sign in.
-You can delete the extracted folder afterwards. Or skip installing and double-click "Sip Water Buddy.exe".
+You can delete the extracted folder afterwards. Or skip installing and double-click "Start Sip.bat" (or "Sip Water Buddy.exe")
+to run it straight from this folder; delete the folder to remove it.
 
 USING IT
   - The water-drop icon is next to the clock (click the ^ arrow if hidden). Double-click it, or right-click it,

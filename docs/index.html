@@ -104,9 +104,13 @@ footer{text-align:center;padding:32px 0 48px;color:var(--muted);font-size:.9rem;
   <h2>Install</h2>
   <h3>Windows 10 / 11</h3>
   <p>Download <code>Sip-Water-Buddy-Setup-&lt;version&gt;.exe</code> (or the portable <code>.exe</code>) from the <a href="https://github.com/vicky-co/sip-water-buddy/releases/latest">latest release</a> and run it. If Windows shows "protected your PC", choose <em>More info &rarr; Run anyway</em> (the app is not code-signed yet). It installs for your user only; no administrator rights needed.</p>
+  <p><strong>Blocked PC ("unknown publisher")?</strong> Skip the installer: download the project folder (<em>Code &rarr; Download ZIP</em>) or the <code>windows-x64.zip</code> from the release, extract it, and double-click <code>Start Sip (Windows, from folder).bat</code> (needs <a href="https://nodejs.org">Node.js</a>) or <code>Start Sip.bat</code> from the prebuilt zip. Details in the <a href="https://github.com/vicky-co/sip-water-buddy#windows-without-an-installer-or-unsigned-exe-blocked-pcs">README</a>.</p>
   <h3>Ubuntu / Linux</h3>
   <pre><code>unzip sip-water-buddy-&lt;version&gt;-linux.zip &amp;&amp; cd sip-water-buddy &amp;&amp; ./install.sh</code></pre>
   <p class="small">Needs Node.js 20+ (the installer offers to install it) and internet once, to fetch the Electron runtime. Tested on Ubuntu 24.04 (GNOME).</p>
+  <h3>Uninstall</h3>
+  <p>Windows: Settings &rarr; Apps &rarr; Sip Water Buddy &rarr; Uninstall, then delete <code>%APPDATA%\sip-water-buddy</code> to remove your data. Linux: run the bundled uninstaller, which removes everything.</p>
+  <pre><code>~/.local/share/sip-water-buddy/uninstall.sh</code></pre>
 </section>
 
 <section>
@@ -114,6 +118,7 @@ footer{text-align:center;padding:32px 0 48px;color:var(--muted);font-size:.9rem;
   <details><summary>Is Sip Water Buddy really free?</summary><p>Yes. It is open source under the MIT license, with no ads, accounts or subscriptions.</p></details>
   <details><summary>Does it connect to the internet?</summary><p>No. It never uses the network and has no telemetry. Your reminders stay on your computer.</p></details>
   <details><summary>Does it work on macOS?</summary><p>macOS is not packaged or tested. Running from source may work; contributions are welcome.</p></details>
+  <details><summary>How do I remove it completely?</summary><p>Windows: uninstall from Settings &rarr; Apps and delete <code>%APPDATA%\sip-water-buddy</code>. Linux: run <code>~/.local/share/sip-water-buddy/uninstall.sh</code>. Full steps are in the <a href="https://github.com/vicky-co/sip-water-buddy#uninstall-completely">README</a>.</p></details>
   <details><summary>Can I use my own characters?</summary><p>Yes. Bring your own 3D avatar or pet as a <code>.glb</code> file, plus your own pet sounds.</p></details>
 </section>
 
