@@ -92,7 +92,7 @@
   POSES.aerial = () => idle(clock);   // driven by the avatar's own clip
 
   // ================= Settings =================
-  const SET = { dogLook:'golden', dogFlip:false, avatar:'default', bark:'bigdog', barkOne:0.3, dogSpeed:1, sound:{ mute:false, voice:true, dog:true, fx:true, volume:0.6 } };
+  const SET = { dogLook:'golden', dogFlip:false, avatar:'default', bark:'bigdog', barkOne:0.3, dogSpeed:1, sound:{ mute:false, voice:true, dog:true, fx:true, volume:0.6 }, behavior:{ leave:'normal', leaveSecs:8, parked:false, spot:null } };
 
   // ================= Sound (all synthesized, no files) =================
   const Sound = (() => {
@@ -316,6 +316,8 @@
       loadDogId(SET.dogLook, SET.dogFlip);
     } else useDog3D = false;
     if (s.sound) Object.assign(SET.sound, s.sound);
+    if (s.behavior) Object.assign(SET.behavior, s.behavior);
+    updateParkBtn();
     Sound.refresh(); set3DMode(); renderNames(); updateChips();
     $('#muteBtn').textContent = SET.sound.mute ? '\u{1F507}' : '\u{1F50A}';
     document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('on', +b.dataset.speed === SET.dogSpeed));
@@ -612,7 +614,11 @@
     const r = aimEl.getBoundingClientRect(), k = aimEl.offsetWidth / r.width;
     return { x: (e.clientX - r.left)*k, y: (e.clientY - r.top)*k };
   }
-  function startAim(){
+  let aimMode = 'fetch';
+  function startAim(mode){
+    aimMode = mode === 'wait' ? 'wait' : 'fetch';
+    $('#aimText').textContent = aimMode === 'wait' ? '\u{1F4CD} Click where I should wait' : '\u{1F3AF} Click anywhere on any screen to throw the ball';
+    $('#aimSpd').hidden = aimMode === 'wait';
     const U = union(); big = true; aiming = true; bubble.hidden = true;
     aimEl.style.width = U.width + 'px'; aimEl.style.height = U.height + 'px'; aimEl.hidden = false;
   }
@@ -621,8 +627,24 @@
   aimEl.addEventListener('click', e => {
     if (e.target.closest('button')) return;
     const U = union(), p = localPoint(e);
+    if (aimMode === 'wait'){ endAim(); chooseSpot({ x: U.x + p.x, y: U.y + p.y }); return; }
     endAim(); activity = makeActivity('fetch', { target: { x: U.x + p.x, y: U.y + p.y } });
   });
+  // The hero walks to the clicked place and waits there. The place is remembered, so "Always wait here" can use it later.
+  function spotDest(P){
+    let a = areas[0], bd = Infinity;
+    for (const r of areas){
+      const dx = Math.max(r.x - P.x, 0, P.x - (r.x + r.width)), dy = Math.max(r.y - P.y, 0, P.y - (r.y + r.height));
+      if (dx*dx + dy*dy < bd){ bd = dx*dx + dy*dy; a = r; }
+    }
+    return { x: clamp(P.x - HX, a.x, a.x + a.width - WIN_W), y: clamp(P.y - (WIN_H - GROUND), a.y, a.y + a.height - WIN_H) };
+  }
+  function chooseSpot(P){
+    const spot = { x: Math.round(P.x), y: Math.round(P.y) }, dest = spotDest(P);
+    waitedHere = true; saveSetting({ behavior:{ spot } }, { behavior:{ spot } });
+    big = false; showAsk();
+    run([{ walk: () => dest }, { ask: true }]);
+  }
   const cancelAim = () => { if (!aiming) return; endAim(); big = false; showAsk(); };
   aimEl.addEventListener('contextmenu', e => { e.preventDefault(); cancelAim(); });
   $('#aimCancel').addEventListener('click', cancelAim);
@@ -652,10 +674,25 @@
   let hideAt = 0;
   const bNote = $('#bNote');
   let askMode = 'water', askItem = null;
-  function say(text, ms){ if (heroOn) Sound.babble(text); else Sound.bark(1); bText.textContent = text; bNote.hidden = true; bActions.hidden = true; bubble.hidden = false; hideAt = ms ? performance.now() + ms : 0; }
+  const goRow = $('#goRow');
+  let asking = false, leaving = false, pendingAsk = false, waitedHere = false;   // asking: the question is on screen; leaving: they have been answered and are on their way out
+  function say(text, ms){ if (heroOn) Sound.babble(text); else Sound.bark(1); bText.textContent = text; bText.hidden = false; bNote.hidden = true; bActions.hidden = true; goRow.hidden = !leaving; bubble.hidden = false; hideAt = ms ? performance.now() + ms : 0; }
+  // After the message has been read, a farewell keeps only the small Go now button on screen
+  function endSay(){
+    hideAt = 0;
+    if (pendingAsk){ pendingAsk = false; showAsk(); }
+    else if (leaving){ bText.hidden = true; bNote.hidden = true; bActions.hidden = true; goRow.hidden = false; bubble.hidden = false; }
+    else bubble.hidden = true;
+  }
+  const keepPlace = () => SET.behavior.parked || waitedHere;
+  function updateParkBtn(){
+    const b = $('#parkBtn'), B = SET.behavior;
+    b.hidden = !B.spot; b.textContent = B.parked ? '\u{1F6B6} Roam again' : '\u{1F4CC} Always wait here';
+    b.title = B.parked ? 'Go back to wandering around the screen' : 'Wait at the spot you chose every time';
+  }
   function showAsk(){
     $('#waterBtns').hidden = askMode !== 'water'; $('#remBtns').hidden = askMode !== 'reminder'; $('#helloBtns').hidden = askMode !== 'hello';
-    bNote.hidden = true;
+    bNote.hidden = true; bText.hidden = false; goRow.hidden = true; asking = true; leaving = false; updateParkBtn();
     if (askMode === 'water') bText.textContent = count === 0 ? 'Boss, first glass of water today. Done?' : 'Water break, boss. Had a glass?';
     else if (askMode === 'reminder'){
       bText.textContent = askItem.title;
@@ -721,6 +758,7 @@
     step = steps.shift() || null; stepT = 0; mimic.key = null;
     if (!step) return;
     if (step.say !== undefined){ say(step.say, step.ms); next(); return; }
+    if (step.hold !== undefined) return;
     if (step.walk){ step.path = route(step.walk()); target = step.path.shift(); }
     if (step.ask) showAsk();
   }
@@ -734,59 +772,94 @@
     D.x = FOLLOW_X; D.face = 1;
     if (clickThrough) clickThrough.reset();
     bubble.hidden = true; stage.style.opacity = 0; showAsk.said = false;
+    asking = false; leaving = false; pendingAsk = false; waitedHere = !!d.parked; bText.hidden = false; goRow.hidden = true; hideAt = 0;
     askItem = d.item || { type: 'water' };
     askMode = askItem.type === 'reminder' ? 'reminder' : askItem.type === 'hello' ? 'hello' : 'water';
+    // The question shows the moment they land and follows them while they walk; answering is possible straight away.
     if (d.kind === 'intro' && askMode === 'water'){
-      run([...ARRIVE, {say:`${lead()} reporting for duty${heroOn && petOn ? ' with ' + NAMES.pet : ''}. I'll drop in ${ivText()}.`, ms:5000},
+      pendingAsk = true;
+      run(d.parked ? [...ARRIVE, {say:`${lead()} reporting for duty${heroOn && petOn ? ' with ' + NAMES.pet : ''}. I'll drop in ${ivText()}.`, ms:5000}, {pose:'shades',dur:2.6}, {ask:true}]
+        : [...ARRIVE, {say:`${lead()} reporting for duty${heroOn && petOn ? ' with ' + NAMES.pet : ''}. I'll drop in ${ivText()}.`, ms:5000},
            {pose:'shades',dur:2.6}, {walk:otherT}, {pose:'step',dur:2.4}, {walk:centerT}, {ask:true}]);
     } else if (askMode === 'hello'){
-      run([...ARRIVE, {pose:'shades',dur:2.6}, {ask:true}]);
+      showAsk(); run([...ARRIVE, {pose:'shades',dur:2.6}, {ask:true}]);
+    } else if (d.parked){
+      showAsk(); run([...ARRIVE, {pose:'shades',dur:2.6}, {ask:true}]);
     } else {
-      run([...ARRIVE, {walk:otherT}, {pose:'collar',dur:1.6}, {walk:centerT}, {pose:'shades',dur:2.6}, {ask:true}]);
+      showAsk(); run([...ARRIVE, {walk:otherT}, {pose:'collar',dur:1.6}, {walk:centerT}, {pose:'shades',dur:2.6}, {ask:true}]);
     }
   });
 
   // ================= Answers (the only way he leaves) =================
-  const atAsk = () => step && step.ask && !activity && !aiming;
+  const atAsk = () => asking && !leaving && !activity && !aiming;
+  function toAsk(){ if (step && step.ask) return; steps = steps.filter(s => s.ask); next(); }      // cut the walking tour short
+  // How they leave, following Settings > General > After you answer. `normal` is the full goodbye; the others are shorter.
+  function farewell(o){
+    const B = SET.behavior; leaving = true; asking = false; armedPt = cursor ? { x: cursor.x, y: cursor.y } : null;
+    let list;
+    if (B.leave === 'instant') list = [{say:o.say, ms:1500}, {hold:1.5}];
+    else if (B.leave === 'quick') list = [{pose:o.react, dur:1.2}, {say:o.say, ms:3200}, {hold:3.2}];
+    else if (B.leave === 'custom'){ const n = clamp(B.leaveSecs || 8, 1, 60); list = [{say:o.say, ms:n*1000}, {hold:n}]; }
+    else list = keepPlace() ? o.normal.filter(st => !st.walk) : o.normal;                          // waiting at a chosen spot: no wandering off
+    run([...list, {fade:o.fade || 0, info:o.info}]);
+  }
+  $('#goNow').addEventListener('click', e => {
+    e.stopPropagation(); const f = steps.find(st => st.fade !== undefined); if (!leaving || !f) return;
+    step = null; steps = [f]; next();
+  });
   $('#yes').addEventListener('click', async () => {
     if (!atAsk()) return;
-    bActions.hidden = true;
+    bActions.hidden = true; leaving = true;
     const r = await api.logGlass(); count = r.count; goal = r.goal; Sound.cheer();
     const msg = count === goal ? `${count} of ${goal}. Goal complete. Semma!` :
                 count > goal ? `${count} glasses today. Next level, boss.` : `Mass! That's ${count} of ${goal} today.`;
-    run([{pose:'drink',dur:2.6}, {say:msg, ms:5000}, {pose:'step',dur:2.4}, {pose:'point',dur:1.6},
-         {walk:otherT}, {pose:'spin',dur:1.2}, {fade:interval, info:{type:'water', minutes:interval}}]);
+    farewell({ say:msg, react:'drink', fade:interval, info:{type:'water', minutes:interval},
+      normal:[{pose:'drink',dur:2.6}, {say:msg, ms:5000}, {pose:'step',dur:2.4}, {pose:'point',dur:1.6}, {walk:otherT}, {pose:'spin',dur:1.2}] });
   });
   $('#no').addEventListener('click', () => {
     if (!atAsk()) return;
-    run([{say:"5 minutes, boss. I'm coming back.", ms:4500}, {pose:'shrug',dur:1.6}, {pose:'point',dur:1.6}, {walk:anyT}, {fade:5, info:{type:'water', minutes:5}}]);
+    const msg = "5 minutes, boss. I'm coming back.";
+    farewell({ say:msg, react:'shrug', fade:5, info:{type:'water', minutes:5},
+      normal:[{say:msg, ms:4500}, {pose:'shrug',dur:1.6}, {pose:'point',dur:1.6}, {walk:anyT}] });
   });
   $('#skip').addEventListener('click', () => {
     if (!atAsk()) return;
-    run([{say:`Okay, skipping this one. See you ${ivText().replace('every ', 'in ')}.`, ms:4500}, {pose:'collar',dur:1.6},
-         {walk:anyT}, {pose:'spin',dur:1.2}, {fade:interval, info:{type:'water', minutes:interval}}]);
+    const msg = `Okay, skipping this one. See you ${ivText().replace('every ', 'in ')}.`;
+    farewell({ say:msg, react:'collar', fade:interval, info:{type:'water', minutes:interval},
+      normal:[{say:msg, ms:4500}, {pose:'collar',dur:1.6}, {walk:anyT}, {pose:'spin',dur:1.2}] });
   });
   // reminders (anything other than water)
   const remInfo = (action, minutes) => ({ type:'reminder', id: askItem.id, action, minutes, preview: !!askItem.preview });
   $('#remDone').addEventListener('click', () => {
     if (!atAsk()) return; bActions.hidden = true; Sound.cheer();
-    run([{say:'Nice work!', ms:3500}, {pose:'point',dur:1.6}, {pose:'step',dur:2.4}, {walk:otherT}, {pose:'spin',dur:1.2}, {fade:0, info:remInfo('done')}]);
+    farewell({ say:'Nice work!', react:'point', info:remInfo('done'),
+      normal:[{say:'Nice work!', ms:3500}, {pose:'point',dur:1.6}, {pose:'step',dur:2.4}, {walk:otherT}, {pose:'spin',dur:1.2}] });
   });
   const snooze = (min, label) => { if (!atAsk()) return; bActions.hidden = true;
-    run([{say:`OK, I'll remind you again in ${label}.`, ms:4000}, {pose:'shrug',dur:1.6}, {pose:'point',dur:1.6}, {walk:anyT}, {fade:0, info:remInfo('snooze', min)}]); };
+    const msg = `OK, I'll remind you again in ${label}.`;
+    farewell({ say:msg, react:'shrug', info:remInfo('snooze', min),
+      normal:[{say:msg, ms:4000}, {pose:'shrug',dur:1.6}, {pose:'point',dur:1.6}, {walk:anyT}] }); };
   $('#remS10').addEventListener('click', () => snooze(10, '10 minutes'));
   $('#remS60').addEventListener('click', () => snooze(60, 'an hour'));
   $('#remSkip').addEventListener('click', () => {
     if (!atAsk()) return; bActions.hidden = true;
-    run([{say:'Skipped.', ms:3000}, {pose:'collar',dur:1.6}, {walk:anyT}, {pose:'spin',dur:1.2}, {fade:0, info:remInfo('skip')}]);
+    farewell({ say:'Skipped.', react:'collar', info:remInfo('skip'),
+      normal:[{say:'Skipped.', ms:3000}, {pose:'collar',dur:1.6}, {walk:anyT}, {pose:'spin',dur:1.2}] });
   });
   $('#helloClose').addEventListener('click', () => {
     if (!atAsk()) return; bActions.hidden = true;
-    run([{say:'See you soon!', ms:2500}, {pose:'point',dur:1.6}, {walk:anyT}, {fade:0, info:{ type:'hello' }}]);
+    farewell({ say:'See you soon!', react:'point', info:{ type:'hello' },
+      normal:[{say:'See you soon!', ms:2500}, {pose:'point',dur:1.6}, {walk:anyT}] });
+  });
+  $('#waitBtn').addEventListener('click', () => { if (!atAsk()) return; toAsk(); startAim('wait'); });
+  $('#parkBtn').addEventListener('click', () => {
+    const on = !SET.behavior.parked; saveSetting({ behavior:{ parked: on } }, { behavior:{ parked: on } });
+    fx(on ? 'I will wait here!' : 'Back to roaming!', HX, 150);
   });
   document.querySelectorAll('[data-play]').forEach(b => b.addEventListener('click', () => {
     if (!atAsk()) return;
-    if (b.dataset.play === 'fetch'){ startAim(); return; }
+    toAsk();
+    if (b.dataset.play === 'fetch'){ startAim('fetch'); return; }
     flair = null; dogSolo = null; bubble.hidden = true; activity = makeActivity(b.dataset.play);
   }));
 
@@ -811,16 +884,32 @@
     return { reset(){ ignoring = false; api.setClickThrough(false); } };
   })() : null;
 
+  // ================= Hovering: stop while the mouse is over them =================
+  let cursor = null, cursorAt = 0, origin = null, armedPt = null;   // armedPt: where the mouse was when they were answered; resting there (on the button just clicked) does not count as hovering
+  if (api.onCursor) api.onCursor(pt => { cursor = pt; cursorAt = performance.now(); });
+  function overCharacter(){
+    if (!cursor || !origin || performance.now() - cursorAt > 400 || aiming) return false;
+    if (armedPt){ if (Math.hypot(cursor.x - armedPt.x, cursor.y - armedPt.y) < 4) return false; armedPt = null; }
+    const lx = cursor.x - origin.x, ly = cursor.y - origin.y, M = 6;
+    const els = [heroOn ? $('#fig') : null, hasDog ? dogEl : null, bubble.hidden ? null : bubble];
+    return els.some(el => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && lx >= r.left - M && lx <= r.right + M && ly >= r.top - M && ly <= r.bottom + M; });
+  }
+
   // ================= Loop =================
   let last = performance.now();
   function frame(now){
     const dt = Math.min(0.1, (now - last)/1000); last = now; clock += dt; frameDt = dt;
     let pose = idle(clock), dogPose = null, heroWalking = false;
 
+    const hovering = overCharacter();
+    const frozen = hovering && !!step && !step.ask && step.pose !== 'landing' && step.fade === undefined;       // mouse over them: hold still until it moves away
+    const sdt = frozen ? 0 : dt;
     if (step){
-      stepT += dt;
-      if (step.pose){
-        pose = POSES[step.pose](stepT, step.dur); sfx(step.pose, stepT - dt, stepT, step.dur);
+      stepT += sdt;
+      if (step.hold !== undefined){
+        if (stepT >= step.hold) next();
+      } else if (step.pose){
+        pose = POSES[step.pose](stepT, step.dur); sfx(step.pose, stepT - sdt, stepT, step.dur);
         if (step.pose === 'landing'){
           stage.style.opacity = Math.min(1, stepT/0.15);
           const k = clamp((stepT - 0.25)/0.45, 0, 1); D.drop = -200*(1 - k*k);
@@ -828,9 +917,10 @@
         if (stepT >= step.dur) next();
       } else if (step.walk){
         const speed = 170, dx = target.x - pos.x, dy = target.y - pos.y, d = Math.hypot(dx, dy);
-        if (d < 2){ if (step.path && step.path.length) target = step.path.shift(); else next(); }
+        if (frozen) pose = idle(clock);
+        else if (d < 2){ if (step.path && step.path.length) target = step.path.shift(); else next(); }
         else {
-          const st = Math.min(d, speed*dt);
+          const st = Math.min(d, speed*sdt);
           pos.x += dx/d*st; pos.y += dy/d*st;
           if (Math.abs(dx) > 1.5) dir = dx > 0 ? 1 : -1;
           phase += st/12.5; pose = walk(phase); heroWalking = true;
@@ -864,7 +954,7 @@
     if (D.barkT > 0) D.barkT -= dt;
     if (!dogPose) dogPose = dogDefault(dt, heroWalking);
     if (!step || !step.pose || step.pose !== 'landing') D.drop = 0;
-    if (hideAt && now > hideAt){ bubble.hidden = true; hideAt = 0; }
+    if (hideAt){ if (hovering) hideAt += dt*1000; if (now > hideAt) endSay(); }
 
     scene.style.transform = `scaleX(${dir})`;
     applyHero(pose); applyDog(dogPose); placeBubble();
@@ -872,6 +962,7 @@
     if (big){ const U = union(); bx = U.x; by = U.y; bw = U.width; bh = U.height;
       stage.style.transform = `translate(${Math.round(pos.x - U.x)}px, ${Math.round(pos.y - U.y)}px)`; }
     else stage.style.transform = '';
+    origin = { x: bx, y: by };
     const key = [bx, by, bw, bh].join(',');
     if (key !== lastSent){ lastSent = key; api.move(bx, by, bw, bh); }
     requestAnimationFrame(frame);

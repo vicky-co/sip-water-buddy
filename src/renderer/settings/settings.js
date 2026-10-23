@@ -115,6 +115,11 @@
   }
   function renderGeneral() {
     $('#startAtLogin').checked = !!V.startAtLogin; $('#startAtLogin').disabled = !V.autostartSupported; $('#loginNote').hidden = V.autostartSupported;
+    const B = V.behavior || { leave: 'normal', leaveSecs: 8, parked: false, spot: null };
+    for (const r of $$('input[name="leave"]')) r.checked = r.value === B.leave;
+    setVal($('#leaveSecs'), B.leaveSecs); $('#leaveSecsRow').hidden = B.leave !== 'custom';
+    $('#parkedOn').checked = !!B.parked; $('#parkedOn').disabled = !B.spot; $('#forgetSpot').disabled = !B.spot;
+    $('#spotNote').textContent = B.spot ? `Your spot is saved (about ${B.spot.x}, ${B.spot.y} on your screen).` : 'No spot chosen yet. Until you pick one, they wait at a random place.';
     $('#diagHero').textContent = V.diag.hero; $('#diagPet').textContent = V.diag.pet;
     $('#diagVer').textContent = `Sip ${V.version} · Electron ${V.electron} · ${V.platform}`;
   }
@@ -253,6 +258,13 @@
   $('#vol').addEventListener('input', e => { $('#volOut').textContent = e.target.value; sendVol(Number(e.target.value)); });
 
   $('#startAtLogin').addEventListener('change', e => patch({ startAtLogin: e.target.checked }));
+  for (const r of $$('input[name="leave"]')) r.addEventListener('change', () => { if (r.checked) patch({ behavior: { leave: r.value } }); });
+  $('#leaveSecs').addEventListener('input', debounce(e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 1) patch({ behavior: { leaveSecs: n } }); }, 500));
+  $('#parkedOn').addEventListener('change', e => patch({ behavior: { parked: e.target.checked } }));
+  $('#forgetSpot').addEventListener('click', () => patch({ behavior: { spot: null } }));
+  $('#uninstall').addEventListener('click', async () => {
+    try { const r = await api.uninstall(); if (r && r.cancelled) toast('Nothing was removed.'); } catch (e) { toast('Could not start the removal.', true); }
+  });
   $('#askNow').addEventListener('click', async () => { const t = await api.askNow(); toast(t.ok ? 'Here I come!' : 'A check-in is already on screen. Answer it first.', !t.ok); });
   $('#openLog').addEventListener('click', () => api.openLog());
   document.addEventListener('click', async e => {

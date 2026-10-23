@@ -166,6 +166,24 @@
         <p class="hint small" id="loginNote" hidden>Available once Sip is installed with its installer script.</p>
       </div>
       <div class="card">
+        <h2>After you answer</h2>
+        <p class="hint small">How long Sip lingers after you tap Done, Skip or a snooze button. The message also has a <strong>Go now</strong> button to send them away at once.</p>
+        <div class="seg" role="radiogroup" aria-label="Leave after answering" id="leaveGroup">
+          <label><input type="radio" name="leave" value="instant"><span>Right away</span></label>
+          <label><input type="radio" name="leave" value="quick"><span>Quick (about 5 s)</span></label>
+          <label><input type="radio" name="leave" value="normal"><span>Normal</span></label>
+          <label><input type="radio" name="leave" value="custom"><span>Custom</span></label>
+        </div>
+        <label class="field" id="leaveSecsRow"><span>Stay for</span><span class="inline"><input id="leaveSecs" type="number" min="1" max="60" inputmode="numeric"> <span>seconds</span></span></label>
+      </div>
+      <div class="card">
+        <h2>Where they wait</h2>
+        <label class="check"><input type="checkbox" id="parkedOn"> <span>Always wait at my spot</span></label>
+        <p class="hint small" id="spotNote"></p>
+        <p class="hint small">To choose a spot, tap <strong>📍 Wait here</strong> in the character's message and click anywhere on your screen. Hover the mouse over them to make them stop and stay put.</p>
+        <div class="btns"><button type="button" class="btn small" id="forgetSpot">Forget my spot</button></div>
+      </div>
+      <div class="card">
         <h2>Try it</h2>
         <div class="btns"><button type="button" class="btn primary" id="askNow">Show me now</button><button type="button" class="btn" id="openLog">Open log file</button></div>
       </div>
@@ -183,6 +201,11 @@
           <a class="btn" href="#" data-link="github">👤 More from the author</a>
         </div>
         <p class="hint small">Links open in your normal browser. Sip itself never goes online.</p>
+      </div>
+      <div class="card">
+        <h2>Remove Sip</h2>
+        <p class="hint">Deletes Sip, its shortcuts, start-at-sign-in entry and everything it saved (reminders, names, added characters and sounds). You will be asked to confirm.</p>
+        <div class="btns"><button type="button" class="btn danger" id="uninstall">Uninstall Sip completely…</button></div>
       </div>
       <div class="card">
         <h2>Privacy and safety</h2>

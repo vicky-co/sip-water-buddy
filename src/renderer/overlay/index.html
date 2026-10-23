@@ -99,6 +99,7 @@
     <button id="muteBtn" class="mini" title="Sound on/off" aria-label="Sound on or off">🔊</button>
     <p id="bText"></p>
     <p id="bNote" hidden></p>
+    <div class="row" id="goRow" hidden><button class="chip" id="goNow" title="Send them off right away">⏩ Go now</button></div>
     <div id="bActions" hidden>
       <div class="row" id="waterBtns">
         <button id="yes">I drank 💧</button>
@@ -120,6 +121,8 @@
         <button class="chip" data-play="dance" data-needs="any">🕺 Dance</button>
         <button class="chip" data-play="style" data-needs="hero">😎 Style</button>
         <button class="chip" id="tricksBtn" data-needs="pet">🐾 Tricks ▾</button>
+        <button class="chip" id="waitBtn" title="Click a spot on your screen and I'll wait there">📍 Wait here</button>
+        <button class="chip" id="parkBtn" hidden></button>
       </div>
       <div class="row play" id="tricks" hidden>
         <button class="chip" data-play="chase" data-needs="pet">🌀 Chase tail</button>
@@ -133,7 +136,7 @@
 </div>
 <div id="aim" hidden>
   <div id="reticle"></div>
-  <div id="aimHint">🎯 Click anywhere on any screen to throw the ball &nbsp;<span class="spd"><span id="speedLbl">Pet</span>: <button data-speed="0.6" title="Slow">🐢</button><button data-speed="1" title="Normal">🐕</button><button data-speed="1.5" title="Fast">🐆</button><button data-speed="2.2" title="Zoomies">🚀</button></span>
+  <div id="aimHint"><span id="aimText">🎯 Click anywhere on any screen to throw the ball</span> &nbsp;<span class="spd" id="aimSpd"><span id="speedLbl">Pet</span>: <button data-speed="0.6" title="Slow">🐢</button><button data-speed="1" title="Normal">🐕</button><button data-speed="1.5" title="Fast">🐆</button><button data-speed="2.2" title="Zoomies">🚀</button></span>
     &nbsp;<button id="aimCancel" class="ghost">Cancel</button></div>
 </div>
 <script src="../vendor/three-bundle.js"></script>

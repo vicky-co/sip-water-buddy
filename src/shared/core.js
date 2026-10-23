@@ -7,6 +7,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   const SPEEDS = [0.6, 1, 1.5, 2.2];
   const SHOW = ['both', 'hero', 'pet'];                 // who is visible; 'hero' = pet hidden, 'pet' = hero hidden
+  const LEAVE = ['instant', 'quick', 'normal', 'custom'];   // how long Sip lingers after you answer
   const PET_LOOKS = ['2d', 'golden', 'gsd'];
   const PET_SOUNDS = ['synth', 'bigdog', 'excited', 'pug', 'woofs'];
   const KINDS = ['once', 'daily', 'weekly', 'interval'];
@@ -38,6 +39,7 @@
     show: 'both',
     sound: { mute: false, voice: true, pet: true, fx: true, volume: 0.6 },
     startAtLogin: true,
+    behavior: { leave: 'normal', leaveSecs: 8, parked: false, spot: null },   // spot: where to wait (screen coordinates of the feet), used when parked
     reminders: [],
   };
 
@@ -214,6 +216,9 @@
     return out;
   }
 
+  // A waiting spot is a point on the desktop; anything that is not two sane whole numbers is dropped.
+  const cleanSpot = v => { v = obj(v); const x = clampInt(v.x, -100000, 100000, NaN), y = clampInt(v.y, -100000, 100000, NaN); return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null; };
+
   function normalize(raw, now = Date.now(), newId = () => Math.random().toString(36).slice(2, 12)) {
     raw = obj(raw);
     const old = raw.v === undefined && Object.keys(raw).length > 0;     // a file written by version 1
@@ -245,6 +250,11 @@
     if (typeof petSnd === 'boolean') s.sound.pet = petSnd;
     if (typeof so.volume === 'number' && so.volume >= 0 && so.volume <= 1) s.sound.volume = Math.round(so.volume * 100) / 100;
     s.startAtLogin = typeof raw.startAtLogin === 'boolean' ? raw.startAtLogin : raw.loginWanted !== false;
+    const b = obj(raw.behavior);
+    s.behavior.leave = LEAVE.includes(b.leave) ? b.leave : 'normal';
+    s.behavior.leaveSecs = clampInt(b.leaveSecs, 1, 60, 8);
+    s.behavior.spot = cleanSpot(b.spot);
+    s.behavior.parked = b.parked === true && !!s.behavior.spot;
     const seen = new Set();
     for (const rr of (Array.isArray(raw.reminders) ? raw.reminders : []).slice(0, MAX_REMINDERS)) {
       const c = cleanReminder(rr, now); if (!c) continue;
@@ -277,10 +287,23 @@
     if ('enabled' in w) typeof w.enabled === 'boolean' ? set(s.water, 'enabled', w.enabled, 'water.enabled') : rejected.push('water.enabled');
     if ('interval' in w) { const n = clampInt(w.interval, 1, 720, NaN); Number.isFinite(n) ? set(s.water, 'interval', n, 'water.interval') : rejected.push('water.interval'); }
     if ('goal' in w) { const n = clampInt(w.goal, 1, 30, NaN); Number.isFinite(n) ? set(s.water, 'goal', n, 'water.goal') : rejected.push('water.goal'); }
+    const bh = obj(patch.behavior);
+    if ('leave' in bh) LEAVE.includes(bh.leave) ? set(s.behavior, 'leave', bh.leave, 'behavior.leave') : rejected.push('behavior.leave');
+    if ('leaveSecs' in bh) { const n = clampInt(bh.leaveSecs, 1, 60, NaN); Number.isFinite(n) ? set(s.behavior, 'leaveSecs', n, 'behavior.leaveSecs') : rejected.push('behavior.leaveSecs'); }
+    if ('spot' in bh) {
+      const sp = bh.spot === null ? null : cleanSpot(bh.spot);
+      if (bh.spot !== null && !sp) rejected.push('behavior.spot');
+      else if (JSON.stringify(s.behavior.spot) !== JSON.stringify(sp)) { s.behavior.spot = sp; if (!sp) s.behavior.parked = false; changed.push('behavior.spot'); }
+    }
+    if ('parked' in bh) {
+      if (typeof bh.parked !== 'boolean') rejected.push('behavior.parked');
+      else if (bh.parked && !s.behavior.spot) rejected.push('behavior.parked');       // nothing to wait at yet
+      else set(s.behavior, 'parked', bh.parked, 'behavior.parked');
+    }
     return { changed, rejected };
   }
 
-  return { DEFAULTS, SPEEDS, SHOW, PET_LOOKS, PET_SOUNDS, KINDS, MAX_REMINDERS, DAY_NAMES, FILE,
+  return { LEAVE, DEFAULTS, SPEEDS, SHOW, PET_LOOKS, PET_SOUNDS, KINDS, MAX_REMINDERS, DAY_NAMES, FILE,
     cleanText, clampInt, isHeroLook, isPetLook, isPetSound, parseDate, atLocal, todayStr, nextDue,
     makeReminder, updateReminder, afterAction, catchUp, isDue, describe, pickNext, nextEvent, applyFinish,
     normalize, applyPatch };

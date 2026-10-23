@@ -115,4 +115,46 @@ t('daylight-saving transitions never loop or skip', () => {
   assert.ok(Number.isFinite(r.nextAt) && r.nextAt > base && r.nextAt - base < 36 * 3600000);
   let cur = base; for (let i = 0; i < 400; i++) { const nx = C.nextDue(r, cur); assert.ok(nx > cur && nx - cur < 26 * 3600000, 'step ' + i); cur = nx; }
 });
+t('behavior settings: leave time and waiting spot are validated', () => {
+  let s = C.normalize({}); assert.deepEqual(s.behavior, { leave: 'normal', leaveSecs: 8, parked: false, spot: null });
+  let r = C.applyPatch(s, { behavior: { leave: 'instant', leaveSecs: 500 } }); assert.equal(s.behavior.leave, 'instant'); assert.equal(s.behavior.leaveSecs, 60); assert.deepEqual(r.rejected, []);
+  r = C.applyPatch(s, { behavior: { leave: 'forever', leaveSecs: 'abc' } }); assert.deepEqual(r.rejected.sort(), ['behavior.leave', 'behavior.leaveSecs']); assert.equal(s.behavior.leave, 'instant');
+  r = C.applyPatch(s, { behavior: { parked: true } }); assert.deepEqual(r.rejected, ['behavior.parked']); assert.equal(s.behavior.parked, false);   // no spot chosen yet
+  r = C.applyPatch(s, { behavior: { spot: { x: 640.4, y: 900 } } }); assert.deepEqual(s.behavior.spot, { x: 640, y: 900 }); assert.deepEqual(r.changed, ['behavior.spot']);
+  r = C.applyPatch(s, { behavior: { parked: true } }); assert.equal(s.behavior.parked, true);
+  r = C.applyPatch(s, { behavior: { spot: { x: 'a', y: 1 } } }); assert.deepEqual(r.rejected, ['behavior.spot']); assert.deepEqual(s.behavior.spot, { x: 640, y: 900 });
+  r = C.applyPatch(s, { behavior: { spot: null } }); assert.equal(s.behavior.spot, null); assert.equal(s.behavior.parked, false);               // clearing the spot also releases the hero
+  s = C.normalize({ behavior: { parked: true, spot: null, leave: 'custom', leaveSecs: 12 } }); assert.equal(s.behavior.parked, false); assert.equal(s.behavior.leave, 'custom'); assert.equal(s.behavior.leaveSecs, 12);
+  s = C.normalize({ behavior: { spot: { x: 1e9, y: 2 }, leave: '<b>' } }); assert.equal(s.behavior.spot.x, 100000); assert.equal(s.behavior.leave, 'normal');
+});
+const U = require('../src/main/uninstall.js');
+t('uninstall plan: Linux install, source folder and unsafe paths', () => {
+  const have = new Set(['/home/ann/.local/share/sip-water-buddy', '/home/ann/.local/share/applications/sip-water-buddy.desktop', '/home/ann/.config/autostart/sip-water-buddy.desktop', '/home/ann/.cache/sip-water-buddy.log', '/home/ann/.config/sip-water-buddy']);
+  const deps = { exists: p => have.has(p), isSipFolder: d => d === '/home/ann/.local/share/sip-water-buddy', hasGit: () => false };
+  const ctx = { platform: 'linux', appDir: '/home/ann/.local/share/sip-water-buddy', home: '/home/ann', userData: '/home/ann/.config/sip-water-buddy', isPackaged: false, execPath: '/x/electron', env: {} };
+  let p = U.plan(ctx, deps); assert.ok(p.ok); assert.deepEqual(p.remove.sort(), [...have].sort());
+  // a source checkout is removed too (the person chose that), with a warning when it is a Git checkout
+  const src = '/home/ann/code/sip-water-buddy'; have.add(src);
+  p = U.plan({ ...ctx, appDir: src }, { ...deps, isSipFolder: d => d === src, hasGit: () => true }); assert.ok(p.ok && p.remove.includes(src) && p.warnings.length === 1);
+  // a folder that is not Sip's is left alone, even if asked
+  p = U.plan({ ...ctx, appDir: '/home/ann/code/other' }, { ...deps, exists: () => true, isSipFolder: () => false }); assert.ok(!p.remove.includes('/home/ann/code/other'));
+  // never the home folder, a drive root, or something above the home folder
+  for (const bad of ['/home/ann', '/home', '/', '/home/ann/..', 'relative/path']) assert.equal(U.safeToDelete(bad, '/home/ann'), false, bad);
+  assert.equal(U.safeToDelete('/home/ann/.config/sip-water-buddy', '/home/ann'), true);
+  p = U.plan({ ...ctx, userData: '/home/ann' }, { ...deps, exists: () => true }); assert.ok(!p.ok);
+});
+t('uninstall plan: Windows installer, portable and folder', () => {
+  const E = 'C:\\Users\\Ann\\AppData\\Local\\Programs\\Sip Water Buddy', D = 'C:\\Users\\Ann\\AppData\\Roaming\\sip-water-buddy';
+  const base = { platform: 'win32', appDir: E + '\\resources\\app', home: 'C:\\Users\\Ann', userData: D, isPackaged: true, execPath: E + '\\Sip Water Buddy.exe', env: { APPDATA: 'C:\\Users\\Ann\\AppData\\Roaming' } };
+  const files = new Set([D, E + '\\Uninstall Sip Water Buddy.exe']);
+  let p = U.plan(base, { exists: x => files.has(x), isSipFolder: () => true, hasGit: () => false });
+  assert.equal(p.uninstaller, E + '\\Uninstall Sip Water Buddy.exe'); assert.deepEqual(p.remove, [D]);
+  p = U.plan({ ...base, env: { ...base.env, PORTABLE_EXECUTABLE_FILE: 'C:\\Users\\Ann\\Downloads\\Sip.exe' } }, { exists: x => x === D || x === 'C:\\Users\\Ann\\Downloads\\Sip.exe', isSipFolder: () => true, hasGit: () => false });
+  assert.deepEqual(p.remove.sort(), ['C:\\Users\\Ann\\Downloads\\Sip.exe', D].sort()); assert.equal(p.uninstaller, null);
+  const F = 'C:\\Users\\Ann\\Tools\\SipWaterBuddy'; const lnk = 'C:\\Users\\Ann\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Sip Water Buddy.lnk';
+  p = U.plan({ ...base, execPath: F + '\\Sip Water Buddy.exe' }, { exists: x => [F, D, lnk].includes(x), isSipFolder: d => d === F, hasGit: () => false });
+  assert.deepEqual(p.remove.sort(), [F, D, lnk].sort());
+  p = U.plan({ ...base, execPath: 'C:\\Users\\Ann\\100%\\Sip Water Buddy.exe' }, { exists: x => x === 'C:\\Users\\Ann\\100%' || x === D, isSipFolder: () => true, hasGit: () => false });
+  assert.ok(!p.ok, 'a path with a % is refused (it would be expanded by cmd)');
+});
 console.log(n + ' checks passed (TZ=' + (process.env.TZ || 'system') + ')');

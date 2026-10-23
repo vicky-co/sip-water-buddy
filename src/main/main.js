@@ -7,13 +7,14 @@ const crypto = require('crypto');
 const { fileURLToPath } = require('url');
 const Core = require('../shared/core.js');
 const Brand = require('./branding.js');
+const Uninstall = require('./uninstall.js');
 const APP_VERSION = require('../../package.json').version;
 
 const isWin = process.platform === 'win32', isLinux = process.platform === 'linux';
 const APP_DIR = path.resolve(__dirname, '..', '..');                       // project root (resources/app in the Windows build)
 const RENDERER = path.join(APP_DIR, 'src', 'renderer');
 const ICON = path.join(APP_DIR, 'assets', 'icons', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
-const WIN_W = 470, WIN_H = 420;
+const WIN_W = 470, WIN_H = 420, HERO_X = 150, GROUND = 15;     // window size; hero centre and feet inside the window (same numbers as the character window)
 const DEBUG = !!process.env.SIP_DEBUG;
 // Links the Settings window may open in the person's browser. The window sends only a key; the address comes from here, https only.
 const LINKS = Object.freeze({ repo: Brand.repoUrl, issues: Brand.issuesUrl, github: Brand.profileUrl, linkedin: Brand.linkedinUrl });
@@ -65,6 +66,7 @@ const statePath = () => path.join(app.getPath('userData'), 'state.json');
 let saveTimer = null;
 function saveNow() {
   clearTimeout(saveTimer); saveTimer = null;
+  if (uninstalling) return;
   try {
     fs.mkdirSync(path.dirname(statePath()), { recursive: true, mode: 0o700 });
     const tmp = statePath() + '.tmp';
@@ -72,7 +74,8 @@ function saveNow() {
     fs.renameSync(tmp, statePath());                      // atomic: a crash can never leave a half-written file
   } catch (e) { console.error('Could not save settings:', e); }
 }
-const save = () => { if (!saveTimer) saveTimer = setTimeout(saveNow, 200); };
+let uninstalling = false;     // once removal has started, nothing may write the settings folder again
+const save = () => { if (!uninstalling && !saveTimer) saveTimer = setTimeout(saveNow, 200); };
 function load() {
   let raw = {};
   try { raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')); } catch (e) { /* first run or unreadable: use defaults */ }
@@ -196,7 +199,7 @@ function overlayPayload() {
   const heroLook = (S.hero.look === 'default' || S.hero.look === '2d' || assetExists('avatar', S.hero.look)) ? S.hero.look : 'default';
   const petLook = (S.pet.look === '2d' || assetExists('pet', S.pet.look)) ? S.pet.look : 'golden';
   const petSound = (S.pet.sound === 'synth' || assetExists('sound', S.pet.sound)) ? S.pet.sound : 'bigdog';
-  return { names: { hero: S.hero.name, pet: S.pet.name }, show: S.show, heroLook, petLook, petFlip: S.pet.flip, petSound, petSoundOne: soundOne(petSound), petSpeed: S.pet.speed, sound: { ...S.sound } };
+  return { names: { hero: S.hero.name, pet: S.pet.name }, show: S.show, heroLook, petLook, petFlip: S.pet.flip, petSound, petSoundOne: soundOne(petSound), petSpeed: S.pet.speed, sound: { ...S.sound }, behavior: { ...S.behavior } };
 }
 const pushOverlay = () => { if (overlay && !overlay.isDestroyed()) overlay.webContents.send('settings', overlayPayload()); };
 
@@ -228,17 +231,25 @@ function createOverlay() {
   });
 }
 
+// Window position that puts the hero's feet on `spot`, kept inside the screen that is nearest to it.
+function spotWindow(spot) {
+  const a = screen.getDisplayNearestPoint({ x: spot.x, y: spot.y }).workArea;
+  const clampTo = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  return { x: Math.round(clampTo(spot.x - HERO_X, a.x, a.x + a.width - WIN_W)), y: Math.round(clampTo(spot.y - (WIN_H - GROUND), a.y, a.y + a.height - WIN_H)) };
+}
 function appear(kind, item) {
   if (busy || !overlay || overlay.isDestroyed()) return false;
   busy = true; active = item || { type: 'water' };
   console.log(`Check-in (${kind}: ${active.type}) at ${new Date().toLocaleTimeString()}`);
   const wa = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-  const x = Math.round(wa.x + 40 + Math.random() * Math.max(0, wa.width - WIN_W - 80)), y = wa.y + wa.height - WIN_H;
+  let x = Math.round(wa.x + 40 + Math.random() * Math.max(0, wa.width - WIN_W - 80)), y = wa.y + wa.height - WIN_H;
+  const parked = S.behavior.parked && S.behavior.spot ? spotWindow(S.behavior.spot) : null;     // the person's chosen waiting place
+  if (parked) { x = parked.x; y = parked.y; }
   overlay.setPosition(x, y); overlay.showInactive(); overlay.setAlwaysOnTop(true, 'screen-saver');
   const out = { type: active.type };
   if (active.type === 'reminder') Object.assign(out, { id: active.id, title: active.title, note: active.note || '', late: !!active.late, preview: !!active.preview });
   if (active.type === 'hello') out.preview = true;
-  overlay.webContents.send('appear', { kind, item: out, wa, areas: screen.getAllDisplays().map(d => d.workArea), start: { x, y },
+  overlay.webContents.send('appear', { kind, item: out, wa, parked: !!parked, areas: screen.getAllDisplays().map(d => d.workArea), start: { x, y },
     count: S.count, goal: S.water.goal, interval: S.water.interval, waterEnabled: S.water.enabled, settings: overlayPayload() });
   refreshUi();
   return true;
@@ -276,7 +287,7 @@ function openSettings(tab) {
 function viewState() {
   return {
     now: Date.now(), version: APP_VERSION, electron: process.versions.electron, platform: process.platform,
-    show: S.show, hero: { ...S.hero }, pet: { ...S.pet }, sound: { ...S.sound }, startAtLogin: S.startAtLogin, autostartSupported: autostartSupported(),
+    show: S.show, hero: { ...S.hero }, pet: { ...S.pet }, sound: { ...S.sound }, startAtLogin: S.startAtLogin, autostartSupported: autostartSupported(), behavior: { ...S.behavior },
     water: { ...S.water, count: S.count, nextAt: S.water.enabled ? waterNextAt : null },
     heroLooks: looksFor('avatar'), petLooks: looksFor('pet'), petSounds: looksFor('sound'),
     reminders: S.reminders.map(r => ({ ...r, describe: Core.describe(r) })),
@@ -302,7 +313,7 @@ function buildTray() {
     { label: 'Add a reminder…', click: () => openSettings('reminders-add') },
     { label: 'Show me now', click: () => askNow() });
   if (S.water.enabled) items.push({ label: 'I just had water', click: () => { rollover(); S.count = Math.min(999, S.count + 1); S.log.push(Date.now()); S.log = S.log.slice(-200); waterNextAt = Date.now() + S.water.interval * 60000; save(); refreshUi(); } });
-  items.push({ type: 'separator' }, { label: 'Quit', click: () => app.quit() });
+  items.push({ type: 'separator' }, { label: 'Uninstall Sip completely…', click: () => { uninstallEverything(); } }, { label: 'Quit', click: () => app.quit() });
   tray.setContextMenu(Menu.buildFromTemplate(items));
   tray.setToolTip(S.water.enabled ? `Sip: ${S.count} of ${S.water.goal} glasses today` : 'Sip');
 }
@@ -331,6 +342,11 @@ fromOverlay('set-setting', patch => {      // the speech bubble can only change 
   const p = patch && typeof patch === 'object' ? patch : {}, safe = {};
   if (p.sound && typeof p.sound.mute === 'boolean') safe.sound = { mute: p.sound.mute };
   if (p.pet && p.pet.speed !== undefined) safe.pet = { speed: p.pet.speed };
+  if (p.behavior && typeof p.behavior === 'object') {          // the "wait here" button: where to wait, and whether to keep waiting there
+    safe.behavior = {};
+    if ('spot' in p.behavior) safe.behavior.spot = p.behavior.spot;
+    if ('parked' in p.behavior) safe.behavior.parked = p.behavior.parked;
+  }
   if (Core.applyPatch(S, safe).changed.length) { save(); pushSettingsState(); }
 });
 fromOverlay('avatar-error', (id, msg) => {
@@ -404,6 +420,35 @@ handleSettings('settings:open-link', async key => {
   try { await shell.openExternal(url); return { ok: true }; } catch (e) { console.error('Could not open link:', e); return { ok: false }; }
 });
 handleSettings('settings:open-log', async () => { await shell.openPath(logFile()); return true; });
+
+// ---------- Uninstall completely ----------
+// Asked for from Settings or the tray. The paths come from uninstall.js (never from a window), the person confirms in a native dialog,
+// and the actual deleting is done by a helper that runs after Sip has quit.
+async function uninstallEverything() {
+  const plan = Uninstall.plan({ platform: process.platform, appDir: APP_DIR, home: os.homedir(), userData: app.getPath('userData'),
+    isPackaged: app.isPackaged, execPath: process.execPath, env: process.env });
+  const parent = settingsWin && !settingsWin.isDestroyed() ? settingsWin : undefined;
+  if (!plan.ok) { await dialog.showMessageBox(parent, { type: 'info', title: 'Uninstall Sip', message: "Sip can't remove itself automatically here.", detail: plan.reason + '\n\nSee "Uninstall completely" in the README for the manual steps.', buttons: ['OK'] }); return { ok: false, reason: plan.reason }; }
+  const r = await dialog.showMessageBox(parent, { type: 'warning', title: 'Uninstall Sip completely', buttons: ['Uninstall completely', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+    message: 'Remove Sip from this computer?',
+    detail: 'This permanently deletes:\n\n' + plan.lines.join('\n') + (plan.warnings.length ? '\n\n' + plan.warnings.join('\n') : '') + '\n\nThis cannot be undone.' });
+  if (r.response !== 0) return { ok: false, cancelled: true };
+  console.log('Uninstalling:', JSON.stringify(plan.remove), plan.uninstaller || '');
+  uninstalling = true; clearTimeout(saveTimer); saveTimer = null;
+  try { S.startAtLogin = false; applyLogin(); } catch (e) { console.error('Could not turn off start-at-sign-in:', e); }
+  if (isWin) try { app.setLoginItemSettings({ openAtLogin: false }); } catch (e) { /* not set */ }
+  try { Uninstall.launch(plan, require('child_process').spawn, process.platform); }
+  catch (e) { uninstalling = false; console.error('Could not start the removal helper:', e); await dialog.showMessageBox(parent, { type: 'error', message: 'Could not start the removal.', detail: String(e.message || e), buttons: ['OK'] }); return { ok: false }; }
+  setTimeout(() => app.exit(0), 300);
+  return { ok: true };
+}
+handleSettings('settings:uninstall', () => uninstallEverything());
+
+// While a check-in is on screen, tell the character window where the mouse is (it stops walking when the mouse is over a character).
+setInterval(() => {
+  if (!busy || !overlay || overlay.isDestroyed() || !overlay.isVisible()) return;
+  overlay.webContents.send('cursor', screen.getCursorScreenPoint());
+}, 70);
 
 // ---------- Start-up ----------
 if (!app.requestSingleInstanceLock()) {
