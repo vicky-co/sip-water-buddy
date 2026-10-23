@@ -3,6 +3,8 @@ All notable changes to this project are documented here. The format follows [Kee
 and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Changed
+- The Release workflow can also be started by hand from the Actions tab (on `main`); it then publishes the version in `package.json` and creates its tag.
 
 ## [2.1.0] - 2026-10-23
 ### Added
