@@ -772,6 +772,7 @@
     D.x = FOLLOW_X; D.face = 1;
     if (clickThrough) clickThrough.reset();
     bubble.hidden = true; stage.style.opacity = 0; showAsk.said = false;
+    cursor = null; armedPt = null;
     asking = false; leaving = false; pendingAsk = false; waitedHere = !!d.parked; bText.hidden = false; goRow.hidden = true; hideAt = 0;
     askItem = d.item || { type: 'water' };
     askMode = askItem.type === 'reminder' ? 'reminder' : askItem.type === 'hello' ? 'hello' : 'water';
@@ -888,7 +889,7 @@
   let cursor = null, cursorAt = 0, origin = null, armedPt = null;   // armedPt: where the mouse was when they were answered; resting there (on the button just clicked) does not count as hovering
   if (api.onCursor) api.onCursor(pt => { cursor = pt; cursorAt = performance.now(); });
   function overCharacter(){
-    if (!cursor || !origin || performance.now() - cursorAt > 400 || aiming) return false;
+    if (!cursor || !origin || performance.now() - cursorAt > 2000 || aiming) return false;      // the main program sends it every 70 ms; a slow frame must not look like the mouse leaving
     if (armedPt){ if (Math.hypot(cursor.x - armedPt.x, cursor.y - armedPt.y) < 4) return false; armedPt = null; }
     const lx = cursor.x - origin.x, ly = cursor.y - origin.y, M = 6;
     const els = [heroOn ? $('#fig') : null, hasDog ? dogEl : null, bubble.hidden ? null : bubble];
