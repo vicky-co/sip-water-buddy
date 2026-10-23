@@ -772,6 +772,7 @@
     D.x = FOLLOW_X; D.face = 1;
     if (clickThrough) clickThrough.reset();
     bubble.hidden = true; stage.style.opacity = 0; showAsk.said = false;
+    armedPt = null;
     asking = false; leaving = false; pendingAsk = false; waitedHere = !!d.parked; bText.hidden = false; goRow.hidden = true; hideAt = 0;
     askItem = d.item || { type: 'water' };
     askMode = askItem.type === 'reminder' ? 'reminder' : askItem.type === 'hello' ? 'hello' : 'water';
@@ -795,7 +796,7 @@
   function toAsk(){ if (step && step.ask) return; steps = steps.filter(s => s.ask); next(); }      // cut the walking tour short
   // How they leave, following Settings > General > After you answer. `normal` is the full goodbye; the others are shorter.
   function farewell(o){
-    const B = SET.behavior; leaving = true; asking = false; armedPt = cursor ? { x: cursor.x, y: cursor.y } : null;
+    const B = SET.behavior; leaving = true; asking = false; armedPt = cursor ? { x: cursor.x, y: cursor.y } : 'pending';
     let list;
     if (B.leave === 'instant') list = [{say:o.say, ms:1500}, {hold:1.5}];
     else if (B.leave === 'quick') list = [{pose:o.react, dur:1.2}, {say:o.say, ms:3200}, {hold:3.2}];
@@ -886,9 +887,10 @@
 
   // ================= Hovering: stop while the mouse is over them =================
   let cursor = null, cursorAt = 0, origin = null, armedPt = null;   // armedPt: where the mouse was when they were answered; resting there (on the button just clicked) does not count as hovering
-  if (api.onCursor) api.onCursor(pt => { cursor = pt; cursorAt = performance.now(); });
+  if (api.onCursor) api.onCursor(pt => { cursor = pt; cursorAt = performance.now(); if (armedPt === 'pending') armedPt = { x: pt.x, y: pt.y }; });
   function overCharacter(){
-    if (!cursor || !origin || performance.now() - cursorAt > 400 || aiming) return false;
+    if (!cursor || !origin || performance.now() - cursorAt > 2000 || aiming) return false;      // the main program sends it every 70 ms; a slow frame must not look like the mouse leaving
+    if (armedPt === 'pending') return false;                                    // answered before any mouse position arrived: the first one becomes the resting place
     if (armedPt){ if (Math.hypot(cursor.x - armedPt.x, cursor.y - armedPt.y) < 4) return false; armedPt = null; }
     const lx = cursor.x - origin.x, ly = cursor.y - origin.y, M = 6;
     const els = [heroOn ? $('#fig') : null, hasDog ? dogEl : null, bubble.hidden ? null : bubble];
