@@ -95,6 +95,59 @@ app.whenReady().then(async () => {
     await waitFor(() => !overlay.isVisible(), 120000);
     await run(sw, "sipSettings.patch({ show: 'both' })");
 
+    // ---- 2.1: the question comes with the character, hovering stops them, leaving is configurable, waiting spot ----
+    const { screen } = require('electron');
+    let fakeCursor = { x: -50, y: -50 }; screen.getCursorScreenPoint = () => fakeCursor;       // the test is the "mouse"
+    const bnds = () => { const b = overlay.getBounds(); return b.x + ',' + b.y; };
+    await run(sw, "sipSettings.patch({ behavior: { leave: 'instant' } })");
+    let t0 = Date.now(); await run(sw, "sipSettings.askNow()");
+    const early = await waitFor(() => run(overlay, "!document.getElementById('bubble').hidden && !document.getElementById('bActions').hidden && document.getElementById('bText').textContent.length > 0"), 8000, 100);
+    check('the message comes with the character, not after the tour', early && Date.now() - t0 < 6000, Date.now() - t0);
+    // while it walks, put the mouse on it: it must hold still, then move again when the mouse leaves
+    const moving = await waitFor(async () => { const a = bnds(); await sleep(350); return a !== bnds(); }, 30000, 50);
+    check('the character walks around while the question is showing', moving);
+    const b0 = overlay.getBounds(); fakeCursor = { x: b0.x + 150, y: b0.y + 320 };
+    await sleep(900); const f1 = bnds(); await sleep(1200); const f2 = bnds();
+    check('hovering the mouse over them makes them stop', f1 === f2, [f1, f2]);
+    fakeCursor = { x: -50, y: -50 };
+    check('they move again when the mouse is taken away', await waitFor(async () => { const a = bnds(); await sleep(350); return a !== bnds(); }, 20000, 50));
+    t0 = Date.now(); await run(overlay, "document.getElementById('skip').click()");
+    check('leave "right away": gone within a few seconds', await waitFor(() => !overlay.isVisible(), 8000, 100) && Date.now() - t0 < 7000, Date.now() - t0);
+    await run(sw, "sipSettings.patch({ behavior: { leave: 'custom', leaveSecs: 30 } })");
+    await run(sw, "sipSettings.askNow()");
+    await waitFor(() => run(overlay, "!document.getElementById('bActions').hidden"), 8000, 100);
+    await run(overlay, "document.getElementById('skip').click()");
+    check('a "Go now" button appears in the farewell', await waitFor(() => run(overlay, "!document.getElementById('goRow').hidden && !document.getElementById('bubble').hidden"), 8000, 100));
+    check('they stay while the custom time runs', overlay.isVisible());
+    t0 = Date.now(); await run(overlay, "document.getElementById('goNow').click()");
+    check('"Go now" sends them off immediately', await waitFor(() => !overlay.isVisible(), 8000, 100) && Date.now() - t0 < 5000, Date.now() - t0);
+    await run(sw, "sipSettings.patch({ behavior: { leave: 'instant' } })");
+    // waiting spot: choose it with the pointer, they walk there and wait
+    await run(sw, "sipSettings.askNow()");
+    await waitFor(() => run(overlay, "!document.getElementById('bActions').hidden"), 8000, 100);
+    await run(overlay, "document.getElementById('waitBtn').click()");
+    check('"Wait here" opens the screen to click on', await waitFor(() => run(overlay, "!document.getElementById('aim').hidden && document.getElementById('aim').offsetWidth > 800"), 8000, 100));
+    await run(overlay, "document.getElementById('aim').dispatchEvent(new MouseEvent('click', { clientX: 1000, clientY: 700, bubbles: true }))");
+    const spot = await waitFor(() => run(sw, "sipSettings.getState().then(s => s.behavior.spot)"), 5000, 100);
+    check('the chosen spot is remembered', spot && Math.abs(spot.x - 1000) <= 2 && Math.abs(spot.y - 700) <= 2, spot);
+    check('they walk to the spot and wait there with the question showing', await waitFor(() => { const b = overlay.getBounds(); return Math.abs(b.x - (spot.x - 150)) <= 3 && Math.abs(b.y - (spot.y - 405)) <= 3 && overlay.getBounds().width === 470; }, 40000, 200));
+    check('the question is still on screen at the spot', await run(overlay, "!document.getElementById('bActions').hidden"));
+    await run(overlay, "document.getElementById('parkBtn').click()");
+    check('"Always wait here" turns on the saved spot', await waitFor(() => run(sw, "sipSettings.getState().then(s => s.behavior.parked === true)"), 5000, 100));
+    await run(overlay, "document.getElementById('skip').click()");
+    await waitFor(() => !overlay.isVisible(), 10000, 100);
+    await run(sw, "sipSettings.askNow()");
+    check('with a saved spot they appear there straight away', await waitFor(() => { const b = overlay.getBounds(); return overlay.isVisible() && Math.abs(b.x - (spot.x - 150)) <= 3 && Math.abs(b.y - (spot.y - 405)) <= 3; }, 10000, 100));
+    await sleep(2500); check('and stay there (no wandering)', Math.abs(overlay.getBounds().x - (spot.x - 150)) <= 3);
+    await shot(overlay, 'overlay-waiting-spot');
+    await run(overlay, "document.getElementById('skip').click()");
+    await waitFor(() => !overlay.isVisible(), 10000, 100);
+    check('the waiting spot can be released and forgotten from Settings', await run(sw, "sipSettings.patch({ behavior: { parked: false } }).then(() => sipSettings.patch({ behavior: { spot: null } })).then(r => r.view.behavior.spot === null && r.view.behavior.parked === false)"));
+    await run(sw, "sipSettings.patch({ behavior: { leave: 'normal' } })");
+    check('Settings has the leave-time options and an uninstall button', await run(sw, "document.querySelector('#tab-general').click() || (!!document.querySelector('input[name=leave][value=custom]') && !!document.getElementById('uninstall') && typeof sipSettings.uninstall === 'function')"));
+    await sleep(300); await shot(sw, 'settings-general');
+    screen.getCursorScreenPoint = require('electron').screen.getCursorScreenPoint;
+
     // ---- credit and links ----
     check('credit footer names the author and links to GitHub and LinkedIn', await run(sw, `(() => { const f = document.querySelector('.brandbar'); const l = f.querySelector('a[data-link=linkedin]'), g = f.querySelector('a[data-link=repo]'); return f.textContent.includes(${JSON.stringify(Brand.author)}) && l.href === ${JSON.stringify(Brand.linkedinUrl)} && g.href === ${JSON.stringify(Brand.repoUrl)}; })()`));
     check('credit footer visible on every tab', await run(sw, "(async () => { for (const t of ['characters','reminders','sounds','general']) { document.querySelector('#tab-' + t).click(); await new Promise(r => setTimeout(r, 80)); const r = document.querySelector('.brandbar').getBoundingClientRect(); if (r.height < 20 || r.bottom > innerHeight + 1) return false; } return true; })()"));

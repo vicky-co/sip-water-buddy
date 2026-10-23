@@ -3,7 +3,14 @@ All notable changes to this project are documented here. The format follows [Kee
 and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [2.1.0] - 2026-10-23
 ### Added
+- **The question now appears the moment the characters land** and follows them while they walk (it used to wait until they had finished a full lap). You can answer straight away.
+- **Hovering stops them**: while the mouse is over the hero, pet or message they stand still; they carry on when it moves away.
+- **Leave time after answering** (Settings → General): right away, quick, normal or a custom 1-60 seconds. The goodbye message has a **⏩ Go now** button.
+- **Wait here**: a 📍 button in the message lets you click a spot on any screen and they walk there and wait. The spot is remembered; **📌 Always wait here** (or Settings → General) uses it for every check-in, **🚶 Roam again** goes back to random places.
+- **Uninstall completely from inside the app** (Settings → General and the tray menu): lists what will be deleted, asks first, then removes the program (or the folder it runs from), shortcuts, start-at-sign-in entry, saved data and logs.
 - **Windows without an installer**: `Start Sip (Windows, from folder).bat` runs Sip straight from the project folder (Node.js fetches Electron, so no downloaded `.exe` is involved), and the release now also includes `sip-water-buddy-<version>-windows-x64.zip`, a prebuilt folder with `Start Sip.bat`. For PCs that block unsigned installers.
 - **`uninstall.sh` for Linux** (installed to `~/.local/share/sip-water-buddy/` and included in the Linux zip): removes the program, launcher, start-at-sign-in entry, saved data and logs; `--keep-data` keeps your settings. The README now documents complete removal on Windows and Linux.
 

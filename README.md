@@ -33,6 +33,13 @@ It is free, open source, and never connects to the internet.
 - **Plays along**: fetch (click anywhere on any screen), pet tricks, dance moves, sounds and music, all generated or bundled.
 - **A real Settings window** (Characters, Reminders, Sounds, General), light and dark themes, keyboard accessible.
 - **Multi-monitor**: the characters walk across all your screens.
+- **Message with them**: the question appears the moment they land and follows them while they walk, so you can answer at once.
+  **Hover the mouse over them and they stop**; move it away and they carry on.
+- **You decide how long they linger** after you answer (right away, quick, normal, or 1-60 seconds in Settings → General), and the
+  goodbye message has a **⏩ Go now** button to send them off immediately.
+- **Wait where you want**: tap **📍 Wait here** in their message and click anywhere on any screen; they walk there and wait.
+  **📌 Always wait here** (or Settings → General) makes them use that spot every time instead of a random place; **🚶 Roam again** undoes it.
+- **Uninstall from inside the app**: Settings → General → *Uninstall Sip completely…* (or the tray menu). It lists exactly what it will delete and asks first.
 - **Private and safe by design**: no network, no telemetry, strict sandboxing (see [SECURITY.md](SECURITY.md)).
 
 ## Download and install
@@ -71,6 +78,11 @@ Needs Node.js 20+ (the installer offers to install it) and internet once, to fet
 Look for the water-drop icon in the top bar. Tested on Ubuntu 24.04 (GNOME); Sip runs through XWayland so it can stay on top.
 
 ### Uninstall completely
+
+**Easiest, on any system:** open Sip's Settings → **General** → **Uninstall Sip completely…** (also in the tray menu). It shows exactly what will be deleted
+(the program or folder it runs from, shortcuts, start-at-sign-in entry, your reminders and settings, logs), asks you to confirm, then quits and removes it.
+If you ran Sip from a project folder (`npm start` or the `.bat` file), that folder is deleted too, so move out anything you want to keep first.
+The manual steps below do the same without opening the app.
 
 **Windows (installer):** Settings → Apps → Installed apps → **Sip Water Buddy** → Uninstall. Then delete `%APPDATA%\sip-water-buddy` to remove your
 reminders and settings. **Portable exe:** quit Sip from the tray icon, delete the `.exe`, and delete `%APPDATA%\sip-water-buddy`.

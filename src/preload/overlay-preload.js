@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('sip', {
   logGlass: () => ipcRenderer.invoke('log-glass'),
   done: info => ipcRenderer.send('done', info),
   onAppear: cb => ipcRenderer.on('appear', (_e, d) => cb(d)),
+  onCursor: cb => ipcRenderer.on('cursor', (_e, pt) => cb(pt)),
   onSettings: cb => ipcRenderer.on('settings', (_e, d) => cb(d)),
   setSetting: s => ipcRenderer.send('set-setting', s),
   loadAvatar: id => ipcRenderer.invoke('load-avatar', id),

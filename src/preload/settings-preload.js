@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('sipSettings', {
   water: op => call('water', op),
   askNow: () => call('ask-now'),
   openLog: () => call('open-log'),
+  uninstall: () => call('uninstall'),
   openLink: key => call('open-link', key),
   onState: cb => ipcRenderer.on('settings:state', (_e, s) => cb(s)),
   onNotice: cb => ipcRenderer.on('settings:notice', (_e, m) => cb(m)),
