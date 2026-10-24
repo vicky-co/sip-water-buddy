@@ -107,8 +107,10 @@ app.whenReady().then(async () => {
     const moving = await waitFor(async () => { const a = bnds(); await sleep(350); return a !== bnds(); }, 30000, 50);
     check('the character walks around while the question is showing', moving);
     // keep the "mouse" on the hero while it may still be walking (on a slow machine a frame can move it a long way), then see that it stays put
-    const follow = setInterval(() => { const b = overlay.getBounds(); fakeCursor = { x: b.x + 150, y: b.y + 320 }; }, 40);
-    await sleep(2500); clearInterval(follow);
+    // (the scene is mirrored when they walk left, so ask the page where the hero really is)
+    let following = true;
+    (async () => { while (following) { try { const b = overlay.getBounds(), c = await run(overlay, "(() => { const r = document.getElementById('fig').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"); fakeCursor = { x: b.x + c[0], y: b.y + c[1] }; } catch (e) { /* retry */ } await sleep(40); } })();
+    await sleep(2500); following = false; await sleep(120);
     const f1 = bnds(); await sleep(1500); const f2 = bnds();
     check('hovering the mouse over them makes them stop', f1 === f2, [f1, f2]);
     fakeCursor = { x: -50, y: -50 };
