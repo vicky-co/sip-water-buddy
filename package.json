@@ -33,7 +33,7 @@
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
-    "three": "0.169.0"
+    "three": "0.186.1"
   },
   "build": {
     "appId": "com.sip.waterbuddy",
