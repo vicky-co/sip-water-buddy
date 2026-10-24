@@ -123,6 +123,14 @@ app.whenReady().then(async () => {
     check('they stay while the custom time runs', overlay.isVisible());
     t0 = Date.now(); await run(overlay, "document.getElementById('goNow').click()");
     check('"Go now" sends them off immediately', await waitFor(() => !overlay.isVisible(), 8000, 100) && Date.now() - t0 < 5000, Date.now() - t0);
+    // answering with the normal goodbye (drink pose first): the Go now button and the goodbye text are there from the first moment
+    await run(sw, "sipSettings.patch({ behavior: { leave: 'normal' } })");
+    await run(sw, "sipSettings.askNow()");
+    await waitFor(() => run(overlay, "!document.getElementById('bActions').hidden"), 8000, 100);
+    await run(overlay, "document.getElementById('yes').click()");
+    check('Go now is shown straight away, with the goodbye text, while the pose plays', await waitFor(() => run(overlay, "!document.getElementById('goRow').hidden && !document.getElementById('bubble').hidden && /glass|today/i.test(document.getElementById('bText').textContent) && !/Had a glass\\?|Done\\?/.test(document.getElementById('bText').textContent)"), 2500, 50));
+    t0 = Date.now(); await run(overlay, "document.getElementById('goNow').click()");
+    check('Go now works during the first pose', await waitFor(() => !overlay.isVisible(), 8000, 100) && Date.now() - t0 < 5000, Date.now() - t0);
     await run(sw, "sipSettings.patch({ behavior: { leave: 'instant' } })");
     // waiting spot: choose it with the pointer, they walk there and wait
     await run(sw, "sipSettings.askNow()");

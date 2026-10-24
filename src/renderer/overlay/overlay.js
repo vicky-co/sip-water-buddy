@@ -797,6 +797,8 @@
   // How they leave, following Settings > General > After you answer. `normal` is the full goodbye; the others are shorter.
   function farewell(o){
     const B = SET.behavior; leaving = true; asking = false; armedPt = cursor ? { x: cursor.x, y: cursor.y } : 'pending';
+    // From the moment they are answered the bubble shows the goodbye and the Go now button (not the old question while a pose plays)
+    bText.textContent = o.say; bText.hidden = false; bNote.hidden = true; bActions.hidden = true; goRow.hidden = false; bubble.hidden = false;
     let list;
     if (B.leave === 'instant') list = [{say:o.say, ms:1500}, {hold:1.5}];
     else if (B.leave === 'quick') list = [{pose:o.react, dur:1.2}, {say:o.say, ms:3200}, {hold:3.2}];

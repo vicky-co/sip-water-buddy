@@ -3,6 +3,8 @@ All notable changes to this project are documented here. The format follows [Kee
 and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Fixed
+- **Go now and the goodbye message appear the moment you answer.** Before, tapping *I drank* left the old question on screen with no buttons while the first pose (about 3 seconds) played, and Go now only showed up afterwards.
 ### Changed
 - The Release workflow can also be started by hand from the Actions tab (on `main`); it then publishes the version in `package.json` and creates its tag.
 
