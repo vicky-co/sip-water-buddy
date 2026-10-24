@@ -107,8 +107,10 @@ app.whenReady().then(async () => {
     const moving = await waitFor(async () => { const a = bnds(); await sleep(350); return a !== bnds(); }, 30000, 50);
     check('the character walks around while the question is showing', moving);
     // keep the "mouse" on the hero while it may still be walking (on a slow machine a frame can move it a long way), then see that it stays put
-    const follow = setInterval(() => { const b = overlay.getBounds(); fakeCursor = { x: b.x + 150, y: b.y + 320 }; }, 40);
-    await sleep(2500); clearInterval(follow);
+    // (the scene is mirrored when they walk left, so ask the page where the hero really is)
+    let following = true;
+    (async () => { while (following) { try { const b = overlay.getBounds(), c = await run(overlay, "(() => { const r = document.getElementById('fig').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"); fakeCursor = { x: b.x + c[0], y: b.y + c[1] }; } catch (e) { /* retry */ } await sleep(40); } })();
+    await sleep(2500); following = false; await sleep(120);
     const f1 = bnds(); await sleep(1500); const f2 = bnds();
     check('hovering the mouse over them makes them stop', f1 === f2, [f1, f2]);
     fakeCursor = { x: -50, y: -50 };
@@ -123,6 +125,14 @@ app.whenReady().then(async () => {
     check('they stay while the custom time runs', overlay.isVisible());
     t0 = Date.now(); await run(overlay, "document.getElementById('goNow').click()");
     check('"Go now" sends them off immediately', await waitFor(() => !overlay.isVisible(), 8000, 100) && Date.now() - t0 < 5000, Date.now() - t0);
+    // answering with the normal goodbye (drink pose first): the Go now button and the goodbye text are there from the first moment
+    await run(sw, "sipSettings.patch({ behavior: { leave: 'normal' } })");
+    await run(sw, "sipSettings.askNow()");
+    await waitFor(() => run(overlay, "!document.getElementById('bActions').hidden"), 8000, 100);
+    await run(overlay, "document.getElementById('yes').click()");
+    check('Go now is shown straight away, with the goodbye text, while the pose plays', await waitFor(() => run(overlay, "!document.getElementById('goRow').hidden && !document.getElementById('bubble').hidden && /glass|today/i.test(document.getElementById('bText').textContent) && !/Had a glass\\?|Done\\?/.test(document.getElementById('bText').textContent)"), 2500, 50));
+    t0 = Date.now(); await run(overlay, "document.getElementById('goNow').click()");
+    check('Go now works during the first pose', await waitFor(() => !overlay.isVisible(), 8000, 100) && Date.now() - t0 < 5000, Date.now() - t0);
     await run(sw, "sipSettings.patch({ behavior: { leave: 'instant' } })");
     // waiting spot: choose it with the pointer, they walk there and wait
     await run(sw, "sipSettings.askNow()");
