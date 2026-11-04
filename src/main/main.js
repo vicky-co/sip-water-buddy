@@ -447,7 +447,7 @@ function openQuickAdd() {
   if (!S.features.todos) { openSettings('general'); return; }
   if (quickWin && !quickWin.isDestroyed()) { quickWin.show(); quickWin.focus(); return; }
   quickWin = new BrowserWindow({
-    width: 460, height: 190, resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, show: false, title: 'Sip Quick Add',
+    width: 460, height: 215, resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, show: false, title: 'Sip Quick Add',
     autoHideMenuBar: true, backgroundColor: '#f6f8fa', icon: ICON,
     webPreferences: { ...SAFE_PREFS(), preload: path.join(APP_DIR, 'src', 'preload', 'quickadd-preload.js') },
   });

@@ -2,7 +2,7 @@
 (function () {
   const api = window.sipQuick, $ = s => document.querySelector(s);
   const input = $('#text'), msg = $('#msg');
-  const say = (t, err) => { msg.textContent = t; msg.classList.toggle('err', !!err); msg.hidden = !t; };
+  const say = (t, err) => { msg.textContent = t; msg.classList.toggle('err', !!err); };
   let busy = false;
   $('#form').addEventListener('submit', async e => {
     e.preventDefault(); if (busy) return;
