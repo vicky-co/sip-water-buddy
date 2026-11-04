@@ -274,12 +274,19 @@ app.whenReady().then(async () => {
 
     // ---- 2.3: to-do reminders, the day log, and the to-do list on the desktop ----
     // another check-in (a custom reminder that fell due, a water ask) may be on screen: answer it so the character is free for what the test needs
-    const clearOverlay = async () => { for (let i = 0; i < 6 && overlay.isVisible(); i++) { await run(overlay, "(() => { const id = !document.getElementById('todoBox').hidden ? 'tdClose' : !document.getElementById('bActions').hidden && !document.getElementById('remBtns').hidden ? 'remSkip' : !document.getElementById('bActions').hidden && !document.getElementById('waterBtns').hidden ? 'skip' : !document.getElementById('bActions').hidden && !document.getElementById('helloBtns').hidden ? 'helloClose' : null; if (id) document.getElementById(id).click(); })()"); await waitFor(() => !overlay.isVisible(), 25000, 200); } };
+    // One click on whatever check-in is really showing its buttons (never on a window that is still drawing); returns what it clicked.
+    const answerShown = () => run(overlay, "(() => { const vis = id => { const e = document.getElementById(id); return e && !e.hidden; }; const id = vis('todoBox') ? 'tdClose' : vis('bActions') && vis('remBtns') ? 'remSkip' : vis('bActions') && vis('waterBtns') ? 'skip' : vis('bActions') && vis('helloBtns') ? 'helloClose' : null; if (id) document.getElementById(id).click(); return id; })()");
+    const clearOverlay = async () => { const t0 = Date.now(); while (overlay.isVisible() && Date.now() - t0 < 90000) { await answerShown(); await sleep(400); } };
+    // answer with a button and press Go now straight away: the answer is applied when the goodbye ends, and a slow machine draws it slowly
+    const answerAndGo = id => run(overlay, `(() => { document.getElementById('${id}').click(); document.getElementById('goNow').click(); })()`);
+    // wait for the reminder of one named to-do; any other check-in that turns up first is answered out of the way
     const waitTodoReminder = name => waitFor(async () => {
-      const txt = await run(overlay, "document.getElementById('bText').textContent"), vis = overlay.isVisible();
-      if (vis && !txt.startsWith('To do: ' + name)) { await clearOverlay(); return false; }
-      return vis && await run(overlay, "!document.getElementById('remBtns').hidden");
-    }, 60000, 250);
+      if (!overlay.isVisible()) return false;
+      const st = await run(overlay, "({ text: document.getElementById('bText').textContent, rem: !document.getElementById('remBtns').hidden && !document.getElementById('bActions').hidden })");
+      if (st.rem && st.text.startsWith('To do: ' + name)) return true;
+      if (!st.text.startsWith('To do: ' + name)) await answerShown();                       // somebody else's check-in is on screen (or nothing answerable yet: then this does nothing)
+      return false;
+    }, 90000, 300);
     await clearOverlay();
     await run(sw, "sipSettings.patch({ behavior: { leave: 'instant' } })");                                  // short goodbyes: the answers below are applied when they end, and CI draws slowly
     await run(sw, "sipSettings.getState().then(s => Promise.all(s.todos.map(t => sipSettings.todoDelete(t.id))))");
@@ -294,17 +301,17 @@ app.whenReady().then(async () => {
     check('a to-do reminder: the character appears with the to-do and its deadline', await waitTodoReminder('Pay the rent') && await run(overlay, "/Due/.test(document.getElementById('bNote').textContent)"));
     await sleep(6000);
     check('the to-do with "No reminder" was not reminded, and the other is not repeated', await run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Quiet one').reminded === null && s.todos.find(t => t.text === 'Pay the rent').reminded > 0)") && await run(overlay, "/^To do: Pay the rent/.test(document.getElementById('bText').textContent)"));
-    await run(overlay, "document.getElementById('remS10').click()");
-    check('+10 min snoozes the to-do reminder', await waitFor(() => !overlay.isVisible(), 20000, 200));
+    await answerAndGo('remS10');
+    check('+10 min snoozes the to-do reminder', await waitFor(() => !overlay.isVisible(), 90000, 250));
     const sn = await run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Pay the rent'))");
     check('...it is not marked done and the delay is recorded', !sn.done && sn.reminded > 0, sn);
     // answering "Done" from the character marks the to-do done: simulate it coming due again
     await run(sw, "sipSettings.patch({ todoRemind: { enabled: false } })");
     await run(sw, `sipSettings.todoDue('${sn.id}', '${hhmm(Date.now() + 10 * 60000)}').then(() => sipSettings.todoRemind('${sn.id}', 15)).then(() => sipSettings.patch({ todoRemind: { enabled: true } }))`);
     check('re-arming: a changed deadline brings the reminder back', await waitTodoReminder('Pay the rent'));
-    await run(overlay, "document.getElementById('remDone').click()");
-    check('Done on the reminder marks the to-do done (when the goodbye finishes)', await waitFor(() => run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Pay the rent').done === true)"), 30000, 200));
-    await waitFor(() => !overlay.isVisible(), 20000, 200);
+    await answerAndGo('remDone');
+    check('Done on the reminder marks the to-do done (when the goodbye finishes)', await waitFor(() => run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Pay the rent').done === true)"), 90000, 250));
+    await waitFor(() => !overlay.isVisible(), 90000, 250);
     check('the to-do answers are in today\'s log', await run(sw, "sipSettings.getState().then(s => { const l = s.dayLog.filter(e => e.type === 'todo' && e.title === 'Pay the rent').map(e => e.action); return l.join() === 'snooze,done'; })"));
     // quick add carries the reminder choice
     menuItem('Quick add todo').click(); const qw3 = await waitFor(() => win('Sip Quick Add'), 10000);
