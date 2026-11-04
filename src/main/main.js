@@ -310,12 +310,13 @@ function buildTray() {
   const items = [];
   if (S.water.enabled) items.push({ label: `Water today: ${S.count} of ${S.water.goal} glasses`, enabled: false });
   items.push({ label: busy ? 'Checking in now' : next ? `Next: ${next.label} at ${fmtWhen(next.at)}` : 'No reminders scheduled', enabled: false });
-  items.push({ type: 'separator' },
-    { label: 'Open Settings…', click: () => openSettings() },
+  items.push({ type: 'separator' });
+  if (S.features.todos) items.push({ label: 'Quick add todo…', click: () => openQuickAdd() });                // first, so it is one click from the icon
+  items.push({ label: 'Open Settings…', click: () => openSettings() },
     { label: 'Add a reminder…', click: () => openSettings('reminders-add') });
   if (S.features.todos) {
     const open = S.todos.filter(t => !t.done).length;
-    items.push({ label: open ? `Show todos (${open} open)` : 'Show todos', click: () => openSettings('todos') }, { label: 'Quick add todo…', click: () => openQuickAdd() });
+    items.push({ label: open ? `Show todos (${open} open)` : 'Show todos', click: () => openSettings('todos') });
   }
   items.push({ label: 'Show me now', click: () => askNow() });
   if (S.water.enabled) items.push({ label: 'I just had water', click: () => { rollover(); S.count = Math.min(999, S.count + 1); S.log.push(Date.now()); S.log = S.log.slice(-200); waterNextAt = Date.now() + S.water.interval * 60000; save(); refreshUi(); } });
