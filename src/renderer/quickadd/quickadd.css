@@ -6,6 +6,9 @@ main { padding: 18px 20px; }
 h1 { font-size: 17px; margin: 0 0 12px; }
 input[type="text"] { width: 100%; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 input[type="text"]:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.duerow { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--muted); font-size: 13px; }
+.duerow label { font-weight: 600; }
+.duerow input { font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
 .row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 button { font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }

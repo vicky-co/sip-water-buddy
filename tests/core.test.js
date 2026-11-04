@@ -165,6 +165,68 @@ t('to-do list: add, finish, delete, clear, limits, switch', () => {
   let p = C.applyPatch(s, { features: { todos: false } }); assert.equal(s.features.todos, false); assert.deepEqual(p.changed, ['features.todos']);
   p = C.applyPatch(s, { features: { todos: 'yes' } }); assert.deepEqual(p.rejected, ['features.todos']);
 });
+t('to-do deadlines: optional, validated, overdue only when open and past', () => {
+  const s = C.normalize({}); const now = L(2026, 10, 10, 12, 0);
+  let r = C.addTodo(s, 'No deadline', now, 'todo-n1'); assert.equal(r.todo.due, null);
+  r = C.addTodo(s, 'Day only', now, 'todo-d1', '2026-10-10'); assert.equal(r.todo.due, '2026-10-10');
+  r = C.addTodo(s, 'With time', now, 'todo-t1', '2026-10-10T09:30'); assert.equal(r.todo.due, '2026-10-10T09:30');
+  for (const bad of ['2026-02-30', '2026-10-10T25:00', 'tomorrow', '2026-10-10T9:30', 12, {}, ['2026-10-10']]) assert.ok(!C.addTodo(s, 'x', now, 'todo-bad', bad).ok, String(bad));
+  assert.equal(s.todos.length, 3);
+  const by = id => s.todos.find(t => t.id === id);
+  assert.equal(C.isOverdue(by('todo-n1'), now), false);
+  assert.equal(C.isOverdue(by('todo-d1'), now), false);                          // due by the end of today
+  assert.equal(C.isOverdue(by('todo-d1'), L(2026, 10, 11, 0, 1)), true);
+  assert.equal(C.isOverdue(by('todo-t1'), now), true); assert.equal(C.isOverdue(by('todo-t1'), L(2026, 10, 10, 9, 29)), false);
+  C.setTodoDone(s, 'todo-t1', true, now); assert.equal(C.isOverdue(by('todo-t1'), now), false);   // finished ones are never overdue
+  assert.ok(C.setTodoDue(s, 'todo-n1', '2026-11-01T08:00').ok); assert.equal(by('todo-n1').due, '2026-11-01T08:00');
+  assert.ok(!C.setTodoDue(s, 'todo-n1', 'soon').ok); assert.equal(by('todo-n1').due, '2026-11-01T08:00');
+  assert.ok(C.setTodoDue(s, 'todo-n1', '').ok); assert.equal(by('todo-n1').due, null); assert.ok(!C.setTodoDue(s, 'nope', null).ok);
+  const back = C.normalize(JSON.parse(JSON.stringify(s))); assert.deepEqual(back.todos, s.todos);
+  assert.equal(C.normalize({ todos: [{ text: 'a', due: 'garbage' }] }).todos[0].due, null);
+});
+t('water window: settings are validated, overnight windows work', () => {
+  const s = C.normalize({}); assert.deepEqual(s.water.window, { enabled: false, start: '08:00', end: '22:00' });
+  let r = C.applyPatch(s, { water: { window: { enabled: true, start: '09:00', end: '18:00' } } }); assert.deepEqual(s.water.window, { enabled: true, start: '09:00', end: '18:00' }); assert.deepEqual(r.rejected, []);
+  r = C.applyPatch(s, { water: { window: { start: '25:00' } } }); assert.deepEqual(r.rejected, ['water.window']);
+  r = C.applyPatch(s, { water: { window: { end: '09:00' } } }); assert.deepEqual(r.rejected, ['water.window']); assert.equal(s.water.window.end, '18:00');   // an empty window is refused
+  r = C.applyPatch(s, { water: { window: { start: ['09:00'], enabled: 'yes' } } }); assert.deepEqual(r.rejected, ['water.window']);
+  assert.deepEqual(C.normalize({ water: { window: { enabled: true, start: '10:00', end: '10:00' } } }).water.window, { enabled: false, start: '08:00', end: '22:00' });
+  assert.equal(C.normalize({ water: { window: { enabled: true, start: ['x'], end: 5 } } }).water.window.start, '08:00');
+  const w = { enabled: true, start: '09:00', end: '18:00' }, at = (h, m = 0, d = 10) => L(2026, 10, d, h, m);
+  assert.ok(C.inWaterWindow(w, at(9, 0)) && C.inWaterWindow(w, at(17, 59)) && !C.inWaterWindow(w, at(18, 0)) && !C.inWaterWindow(w, at(8, 59)));
+  const night = { enabled: true, start: '22:00', end: '06:00' };
+  assert.ok(C.inWaterWindow(night, at(23)) && C.inWaterWindow(night, at(2)) && !C.inWaterWindow(night, at(6)) && !C.inWaterWindow(night, at(12)));
+  assert.ok(C.inWaterWindow({ enabled: false, start: '09:00', end: '10:00' }, at(3)));                     // switched off: always
+  assert.equal(C.nextWaterStart(w, at(18, 5)), at(9, 0, 11)); assert.equal(C.nextWaterStart(w, at(7, 0)), at(9, 0, 10)); assert.equal(C.nextWaterStart(w, at(9, 0)), at(9, 0, 11));
+});
+t('water window: asks stop at the end, restart at the start, and follow edits', () => {
+  const s = C.normalize({}); s.water.interval = 30; s.water.window = { enabled: true, start: '09:00', end: '18:00' };
+  const at = (h, m = 0, d = 10) => L(2026, 10, d, h, m), min = 60000;
+  // inside the window an ask stays where it is; one that would land after the end moves to the next opening
+  assert.equal(C.gateWater(s, at(12, 30), at(12, 0)), at(12, 30));
+  assert.equal(C.gateWater(s, at(18, 20), at(17, 50)), at(9, 0, 11));
+  // the window closes while an ask was due: it resets to the opening time, and nothing is asked in between
+  assert.equal(C.gateWater(s, at(17, 50), at(18, 5)), at(9, 0, 11));
+  assert.equal(C.pickNext(s, at(17, 50), at(18, 5)), null);
+  assert.equal(C.gateWater(s, at(9, 0, 11), at(23, 0)), at(9, 0, 11));                                     // stays put overnight
+  assert.deepEqual(C.pickNext(s, at(9, 0, 11), at(9, 0, 11)), { type: 'water' });                           // and asks when it opens
+  assert.equal(C.pickNext(s, at(9, 0, 11), at(8, 59, 11)), null);
+  // after the reset the person makes the window longer: asks resume (a minute from now) instead of waiting for tomorrow
+  s.water.window.end = '20:00'; assert.equal(C.rescheduleWater(s, at(9, 0, 11), at(18, 10)), at(18, 11));
+  // ... or moves the start earlier than now
+  s.water.window = { enabled: true, start: '09:00', end: '18:00' }; s.water.window.start = '07:00'; assert.equal(C.rescheduleWater(s, at(9, 0, 11), at(8, 0, 11)), at(8, 1, 11));
+  // a shorter window that no longer covers now pushes the next ask to its opening
+  s.water.window = { enabled: true, start: '09:00', end: '18:00' }; s.water.window.end = '12:00'; assert.equal(C.rescheduleWater(s, at(14, 0), at(13, 0)), at(9, 0, 11));
+  s.water.window = { enabled: true, start: '14:00', end: '18:00' }; assert.equal(C.rescheduleWater(s, at(13, 30), at(13, 0)), at(14, 0));        // start moved later
+  // switching the window off while asks were pushed to tomorrow: back to the normal interval
+  s.water.window = { enabled: false, start: '09:00', end: '18:00' }; assert.equal(C.rescheduleWater(s, at(9, 0, 11), at(19, 0)), at(19, 30));
+  // a nearby ask is left alone when nothing else changed; asks do not apply when the water reminder is off
+  s.water.window = { enabled: true, start: '09:00', end: '18:00' }; assert.equal(C.rescheduleWater(s, at(12, 20), at(12, 0)), at(12, 20));
+  s.water.enabled = false; assert.equal(C.gateWater(s, at(19, 0), at(19, 0)), at(19, 0));
+  // overnight window
+  s.water.enabled = true; s.water.window = { enabled: true, start: '22:00', end: '06:00' };
+  assert.equal(C.gateWater(s, at(23, 0), at(22, 30)), at(23, 0)); assert.equal(C.gateWater(s, at(6, 10, 11), at(5, 50, 11)), at(22, 0, 11));
+});
 const U = require('../src/main/uninstall.js');
 t('uninstall plan: Linux install, source folder and unsafe paths', () => {
   const have = new Set(['/home/ann/.local/share/sip-water-buddy', '/home/ann/.local/share/applications/sip-water-buddy.desktop', '/home/ann/.config/autostart/sip-water-buddy.desktop', '/home/ann/.cache/sip-water-buddy.log', '/home/ann/.config/sip-water-buddy']);

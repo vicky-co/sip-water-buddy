@@ -79,6 +79,14 @@
             <label class="field"><span>Daily goal</span><span class="inline"><input id="waterGoal" type="number" min="1" max="30" inputmode="numeric"> <span>glasses</span></span></label>
           </div>
           <div class="chips" id="waterChips" aria-label="Common intervals"></div>
+          <div class="winbox">
+            <label class="check"><input type="checkbox" id="winOn"> <span>Only ask during these hours</span></label>
+            <div class="fields" id="winFields">
+              <label class="field"><span>From</span><input id="winStart" type="time"></label>
+              <label class="field"><span>Until</span><input id="winEnd" type="time"></label>
+            </div>
+            <p class="hint small" id="winNote"></p>
+          </div>
           <div class="today">
             <span id="waterToday"></span>
             <span class="btns">
@@ -147,6 +155,12 @@
         <form id="todoForm" class="todoadd" autocomplete="off">
           <input id="todoText" type="text" maxlength="120" placeholder="What do you need to do?" aria-label="New to-do">
           <button type="submit" class="btn primary">Add</button>
+          <div class="dueadd">
+            <span class="duelbl">Deadline (optional)</span>
+            <input id="todoDue" type="date" aria-label="Deadline date (optional)">
+            <input id="todoDueTime" type="time" aria-label="Deadline time (optional)" disabled>
+            <button type="button" class="btn small" id="todoDueClear" hidden>Clear</button>
+          </div>
         </form>
         <p class="hint small" id="todoErr" role="alert" hidden></p>
         <p class="hint small">Tip: the tray menu has <strong>Quick add todo…</strong> so you can jot one down without opening Settings.</p>

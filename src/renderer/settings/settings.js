@@ -43,8 +43,9 @@
   async function patch(p) {
     try {
       const r = await api.patch(p); V = r.view; render();
-      if (r.rejected && r.rejected.length) toast('One of those values was not accepted, so it was left as it was.', true);
-    } catch (e) { toast('Could not save that change.', true); }
+      if (r.rejected && r.rejected.length) toast(r.rejected.includes('water.window') ? 'Pick a start and an end that are different times.' : 'One of those values was not accepted, so it was left as it was.', true);
+      return r;
+    } catch (e) { toast('Could not save that change.', true); return null; }
   }
 
   // ---------- Tabs ----------
@@ -129,16 +130,36 @@
     $('#tab-todos').hidden = !on;
     if (!on && !$('#panel-todos').hidden) showTab('general');
     $('#todosOn').checked = on;
-    const open = V.todos.filter(t => !t.done).sort((a, b) => a.createdAt - b.createdAt), done = V.todos.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
-    $('#todoCount').textContent = open.length ? `To do (${open.length})` : 'To do';
+    // open items: soonest deadline first, then the ones without a deadline in the order they were added
+    const open = V.todos.filter(t => !t.done).sort((a, b) => (a.dueAt == null) - (b.dueAt == null) || (a.dueAt - b.dueAt) || a.createdAt - b.createdAt), done = V.todos.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+    const late = open.filter(t => t.overdue).length;
+    $('#todoCount').textContent = open.length ? `To do (${open.length}${late ? ', ' + late + ' overdue' : ''})` : 'To do';
     $('#todoEmpty').hidden = V.todos.length > 0; $('#todoClear').hidden = done.length === 0;
     if (!changed('todos', V.todos)) return;
-    $('#todoList').replaceChildren(...[...open, ...done].map(t => el('li', { class: t.done ? 'done' : '' },
-      el('label', {}, el('input', { type: 'checkbox', checked: t.done, onchange: e => todoDone(t.id, e.target.checked) }), el('span', { text: t.text })),
-      el('button', { type: 'button', class: 'btn small', title: 'Delete', 'aria-label': 'Delete: ' + t.text, text: '✕', onclick: () => todoDelete(t.id) }))));
+    $('#todoList').replaceChildren(...[...open, ...done].map(t => {
+      const date = t.due ? t.due.slice(0, 10) : '', time = t.due && t.due.length > 10 ? t.due.slice(11) : '', badge = dueBadge(t);
+      const save = () => { const d = dateIn.value; todoDue(t.id, d ? d + (timeIn.value ? 'T' + timeIn.value : '') : ''); };
+      const dateIn = el('input', { type: 'date', value: date, 'aria-label': 'Deadline date for ' + t.text, onchange: save });
+      const timeIn = el('input', { type: 'time', value: time, 'aria-label': 'Deadline time for ' + t.text, disabled: !date, onchange: save });
+      return el('li', { class: (t.done ? 'done ' : '') + (t.overdue ? 'late' : '') },
+        el('div', { class: 'todoline' },
+          el('label', {}, el('input', { type: 'checkbox', checked: t.done, onchange: e => todoDone(t.id, e.target.checked) }), el('span', { text: t.text })),
+          el('button', { type: 'button', class: 'btn small', title: 'Delete', 'aria-label': 'Delete: ' + t.text, text: '✕', onclick: () => todoDelete(t.id) })),
+        el('div', { class: 'dueline' }, el('span', { text: 'Deadline' }), dateIn, timeIn, badge));
+    }));
   }
   async function todoCall(fn) { try { const r = await fn(); if (r && r.view) { V = r.view; render(); } return r; } catch (e) { toast('Could not change the to-do list.', true); return null; } }
   const todoDone = (id, done) => todoCall(() => api.todoDone(id, done));
+  async function todoDue(id, due) { const r = await todoCall(() => api.todoDue(id, due)); if (r && !r.ok) toast(r.error || 'Pick a valid deadline.', true); }
+  // "Overdue", "Due today", "Due tomorrow", "Due in 3 days", with the time when one was set
+  function dueBadge(t) {
+    if (!t.due) return null;
+    const at = new Date(t.dueAt), time = t.due.length > 10 ? ', ' + t.due.slice(11) : '';
+    const days = Math.round((startOfDay(at) - startOfDay(new Date(V.now))) / 86400000);
+    if (t.done) return el('span', { class: 'badge', text: 'Was due ' + at.toLocaleDateString([], { day: 'numeric', month: 'short' }) + time });
+    if (t.overdue) return el('span', { class: 'badge late', text: 'Overdue \u00b7 ' + at.toLocaleDateString([], { day: 'numeric', month: 'short' }) + time });
+    return el('span', { class: days <= 1 ? 'badge soon' : 'badge', text: (days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `Due in ${days} days`) + time });
+  }
   const todoDelete = id => todoCall(() => api.todoDelete(id));
 
   // ---------- Stats (last 30 days) ----------
@@ -190,12 +211,27 @@
       : el('tr', { class: 'empty' }, el('th', { scope: 'row', text: fmtDay(d.d) }), el('td', { colspan: 6, text: 'no data' }))));
   }
 
+  // ---------- Water window ----------
+  function inWindowNow(w) {
+    if (!w.window.enabled) return true;
+    const d = new Date(V.now), m = d.getHours() * 60 + d.getMinutes(), t = x => +x.slice(0, 2) * 60 + +x.slice(3), a = t(w.window.start), b = t(w.window.end);
+    return a < b ? (m >= a && m < b) : (m >= a || m < b);
+  }
+  function renderWindow(w) {
+    const win = w.window; $('#winOn').checked = win.enabled;
+    setVal($('#winStart'), win.start); setVal($('#winEnd'), win.end);
+    $('#winStart').disabled = $('#winEnd').disabled = !win.enabled;
+    $('#winNote').textContent = !win.enabled ? 'Off: Sip asks all day, at the interval above.'
+      : `Sip asks between ${win.start} and ${win.end}. After ${win.end} it goes quiet and the next ask is at ${win.start}. ` +
+        (inWindowNow(w) ? 'Right now you are inside the window.' : 'Right now you are outside the window.') + ' Change the hours any time; a longer window brings the asks back.';
+  }
   function renderReminders() {
     const w = V.water;
     $('#waterOn').checked = w.enabled; $('#waterCard').classList.toggle('off', !w.enabled);
     setVal($('#waterEvery'), w.interval); setVal($('#waterGoal'), w.goal);
     if (changed('waterChips', w.interval)) $('#waterChips').replaceChildren(...[15, 20, 30, 45, 60, 90].map(m =>
       el('button', { type: 'button', class: 'chip', 'aria-pressed': String(m === w.interval), text: m + ' min', onclick: () => patch({ water: { interval: m } }) })));
+    renderWindow(w);
     $('#waterToday').textContent = `Today: ${w.count} of ${w.goal} glasses` + (w.enabled ? ` · next check-in ${fmtWhen(w.nextAt)}` : '');
     const sorted = [...V.reminders].sort((a, b) => (a.done - b.done) || (!a.enabled - !b.enabled) || ((a.nextAt || 9e15) - (b.nextAt || 9e15)));
     $('#clearDone').hidden = !V.reminders.some(r => r.done);
@@ -325,13 +361,21 @@
   $('#vol').addEventListener('input', e => { $('#volOut').textContent = e.target.value; sendVol(Number(e.target.value)); });
 
   $('#todosOn').addEventListener('change', e => patch({ features: { todos: e.target.checked } }));
+  const syncDueAdd = () => { const has = !!$('#todoDue').value; $('#todoDueTime').disabled = !has; $('#todoDueClear').hidden = !has; if (!has) $('#todoDueTime').value = ''; };
+  $('#todoDue').addEventListener('input', syncDueAdd);
+  $('#todoDueClear').addEventListener('click', () => { $('#todoDue').value = ''; syncDueAdd(); });
   $('#todoForm').addEventListener('submit', async e => {
     e.preventDefault(); const input = $('#todoText'), text = input.value.trim(), err = $('#todoErr');
     if (!text) { err.textContent = 'Type what you need to do.'; err.hidden = false; input.focus(); return; }
-    const r = await todoCall(() => api.todoAdd(text));
-    if (r && r.ok) { input.value = ''; err.hidden = true; } else if (r) { err.textContent = r.error || 'Could not add that.'; err.hidden = false; }
+    const d = $('#todoDue').value, due = d ? d + ($('#todoDueTime').value ? 'T' + $('#todoDueTime').value : '') : '';
+    const r = await todoCall(() => api.todoAdd(text, due));
+    if (r && r.ok) { input.value = ''; $('#todoDue').value = ''; syncDueAdd(); err.hidden = true; } else if (r) { err.textContent = r.error || 'Could not add that.'; err.hidden = false; }
     input.focus();
   });
+  const winPatch = (k, el_) => async () => { const r = await patch({ water: { window: { [k]: k === 'enabled' ? el_.checked : el_.value } } }); if (r && r.rejected && r.rejected.length) { renderWindow(V.water); } };
+  $('#winOn').addEventListener('change', winPatch('enabled', $('#winOn')));
+  $('#winStart').addEventListener('change', e => { if (e.target.value) { e.target.blur(); winPatch('start', e.target)(); } });
+  $('#winEnd').addEventListener('change', e => { if (e.target.value) { e.target.blur(); winPatch('end', e.target)(); } });
   $('#todoClear').addEventListener('click', async () => { const r = await todoCall(() => api.todoClearDone()); if (r) toast(r.cleared ? `Cleared ${r.cleared} completed.` : 'Nothing to clear.'); });
   $('#startAtLogin').addEventListener('change', e => patch({ startAtLogin: e.target.checked }));
   for (const r of $$('input[name="leave"]')) r.addEventListener('change', () => { if (r.checked) patch({ behavior: { leave: r.value } }); });

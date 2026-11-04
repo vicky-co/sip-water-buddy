@@ -13,6 +13,11 @@
   <form id="form" autocomplete="off">
     <label class="sr" for="text">What do you need to do?</label>
     <input id="text" type="text" maxlength="120" placeholder="What do you need to do?" autofocus>
+    <div class="duerow">
+      <label for="due">Deadline (optional)</label>
+      <input id="due" type="date">
+      <input id="dueTime" type="time" aria-label="Deadline time (optional)" disabled>
+    </div>
     <p id="msg" role="status" aria-live="polite"></p>
     <div class="row">
       <button type="submit" class="primary">Add</button>

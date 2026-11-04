@@ -227,7 +227,7 @@ function createOverlay() {
   overlay.webContents.once('did-finish-load', () => {
     console.log('Character window loaded.');
     pushOverlay();
-    if (S.water.enabled) setTimeout(() => appear('intro', { type: 'water' }), 1200);
+    if (S.water.enabled && Core.inWaterWindow(S.water.window, Date.now())) setTimeout(() => appear('intro', { type: 'water' }), 1200);   // quiet outside the chosen hours
   });
 }
 
@@ -264,7 +264,7 @@ function finish(info) {
   const clean = { type: ['water', 'reminder', 'hello'].includes(info.type) ? info.type : 'hello', id: typeof info.id === 'string' ? info.id.slice(0, 40) : '',
     action: ['done', 'skip', 'snooze'].includes(info.action) ? info.action : '', minutes: Number.isFinite(info.minutes) ? info.minutes : undefined, preview: info.preview === true };
   rollover();
-  waterNextAt = Core.applyFinish(S, clean, Date.now(), waterNextAt);
+  waterNextAt = Core.gateWater(S, Core.applyFinish(S, clean, Date.now(), waterNextAt), Date.now());
   busy = false; active = null;
   if (overlay && !overlay.isDestroyed()) overlay.hide();
   save(); refreshUi();
@@ -289,7 +289,7 @@ function viewState() {
   return {
     now: Date.now(), version: APP_VERSION, electron: process.versions.electron, platform: process.platform,
     show: S.show, hero: { ...S.hero }, pet: { ...S.pet }, sound: { ...S.sound }, startAtLogin: S.startAtLogin, autostartSupported: autostartSupported(), behavior: { ...S.behavior },
-    features: { ...S.features }, todos: S.todos.map(t => ({ ...t })), stats: Core.stats(S),
+    features: { ...S.features }, todos: S.todos.map(t => ({ ...t, dueAt: Core.dueAt(t.due), overdue: Core.isOverdue(t, Date.now()) })), stats: Core.stats(S),
     water: { ...S.water, count: S.count, nextAt: S.water.enabled ? waterNextAt : null },
     heroLooks: looksFor('avatar'), petLooks: looksFor('pet'), petSounds: looksFor('sound'),
     reminders: S.reminders.map(r => ({ ...r, describe: Core.describe(r) })),
@@ -315,11 +315,11 @@ function buildTray() {
   items.push({ label: 'Open Settings…', click: () => openSettings() },
     { label: 'Add a reminder…', click: () => openSettings('reminders-add') });
   if (S.features.todos) {
-    const open = S.todos.filter(t => !t.done).length;
-    items.push({ label: open ? `Show todos (${open} open)` : 'Show todos', click: () => openSettings('todos') });
+    const open = S.todos.filter(t => !t.done).length, late = S.todos.filter(t => Core.isOverdue(t, Date.now())).length;
+    items.push({ label: open ? `Show todos (${open} open${late ? ', ' + late + ' overdue' : ''})` : 'Show todos', click: () => openSettings('todos') });
   }
   items.push({ label: 'Show me now', click: () => askNow() });
-  if (S.water.enabled) items.push({ label: 'I just had water', click: () => { rollover(); S.count = Math.min(999, S.count + 1); S.log.push(Date.now()); S.log = S.log.slice(-200); waterNextAt = Date.now() + S.water.interval * 60000; save(); refreshUi(); } });
+  if (S.water.enabled) items.push({ label: 'I just had water', click: () => { rollover(); S.count = Math.min(999, S.count + 1); S.log.push(Date.now()); S.log = S.log.slice(-200); waterNextAt = Core.gateWater(S, Date.now() + S.water.interval * 60000, Date.now()); save(); refreshUi(); } });
   items.push({ type: 'separator' }, { label: 'Uninstall Sip completely…', click: () => { uninstallEverything(); } }, { label: 'Quit', click: () => app.quit() });
   tray.setContextMenu(Menu.buildFromTemplate(items));
   tray.setToolTip(S.water.enabled ? `Sip: ${S.count} of ${S.water.goal} glasses today` : 'Sip');
@@ -375,10 +375,13 @@ handleOverlay('log-glass', () => { rollover(); S.count = Math.min(999, S.count +
 const handleSettings = (ch, fn) => ipcMain.handle(ch, async (e, ...a) => { if (!fromWin(e, settingsWin)) throw new Error('blocked'); return fn(...a); });
 handleSettings('settings:get', () => viewState());
 handleSettings('settings:patch', patch => {
-  const before = { interval: S.water.interval, enabled: S.water.enabled, login: S.startAtLogin };
+  const win = () => JSON.stringify(S.water.window);
+  const before = { interval: S.water.interval, enabled: S.water.enabled, login: S.startAtLogin, win: win() };
   const r = Core.applyPatch(S, patch);
   if (r.changed.length) {
-    if (S.water.enabled !== before.enabled || S.water.interval !== before.interval) waterNextAt = Date.now() + S.water.interval * 60000;
+    const now = Date.now();
+    if (S.water.enabled !== before.enabled || S.water.interval !== before.interval) waterNextAt = Core.gateWater(S, now + S.water.interval * 60000, now);
+    else if (win() !== before.win) waterNextAt = Core.rescheduleWater(S, waterNextAt, now);     // editing the hours: asks resume or move to match
     if (S.startAtLogin !== before.login) applyLogin();
     save(); pushOverlay(); refreshUi();
   }
@@ -430,13 +433,15 @@ handleSettings('settings:open-log', async () => { await shell.openPath(logFile()
 
 // ---------- To-do list ----------
 const todoView = () => viewState();
-function todoAdd(text) {
+function todoAdd(text, due) {
   if (!S.features.todos) return { ok: false, error: 'The to-do list is switched off in Settings > General.' };
-  const r = Core.addTodo(S, typeof text === 'string' ? text : '', Date.now(), crypto.randomUUID());
+  if (due !== undefined && due !== null && typeof due !== 'string') return { ok: false, error: 'Pick a valid deadline.' };
+  const r = Core.addTodo(S, typeof text === 'string' ? text : '', Date.now(), crypto.randomUUID(), typeof due === 'string' ? due : undefined);
   if (r.ok) { save(); refreshUi(); }
   return r;
 }
-handleSettings('settings:todo-add', text => { const r = todoAdd(text); return { ok: r.ok, error: r.error || '', view: todoView() }; });
+handleSettings('settings:todo-due', (id, due) => { const r = Core.setTodoDue(S, typeof id === 'string' ? id.slice(0, 40) : '', typeof due === 'string' ? due : null); if (r.ok) { save(); refreshUi(); } return { ok: r.ok, error: r.error || '', view: todoView() }; });
+handleSettings('settings:todo-add', (text, due) => { const r = todoAdd(text, due); return { ok: r.ok, error: r.error || '', view: todoView() }; });
 handleSettings('settings:todo-done', (id, done) => { const r = Core.setTodoDone(S, typeof id === 'string' ? id.slice(0, 40) : '', done === true, Date.now()); if (r.ok) { save(); refreshUi(); } return { ok: r.ok, view: todoView() }; });
 handleSettings('settings:todo-delete', id => { const ok = Core.deleteTodo(S, typeof id === 'string' ? id.slice(0, 40) : ''); if (ok) { save(); refreshUi(); } return { ok, view: todoView() }; });
 handleSettings('settings:todo-clear-done', () => { const n = Core.clearDoneTodos(S); if (n) { save(); refreshUi(); } return { ok: true, cleared: n, view: todoView() }; });
@@ -447,7 +452,7 @@ function openQuickAdd() {
   if (!S.features.todos) { openSettings('general'); return; }
   if (quickWin && !quickWin.isDestroyed()) { quickWin.show(); quickWin.focus(); return; }
   quickWin = new BrowserWindow({
-    width: 460, height: 215, resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, show: false, title: 'Sip Quick Add',
+    width: 460, height: 250, resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, show: false, title: 'Sip Quick Add',
     autoHideMenuBar: true, backgroundColor: '#f6f8fa', icon: ICON,
     webPreferences: { ...SAFE_PREFS(), preload: path.join(APP_DIR, 'src', 'preload', 'quickadd-preload.js') },
   });
@@ -456,9 +461,9 @@ function openQuickAdd() {
   quickWin.on('closed', () => { quickWin = null; });
   quickWin.loadFile(path.join(RENDERER, 'quickadd', 'index.html'));
 }
-ipcMain.handle('quick:add', (e, text) => {
+ipcMain.handle('quick:add', (e, text, due) => {
   if (!fromWin(e, quickWin)) throw new Error('blocked');
-  const r = todoAdd(text); return { ok: r.ok, error: r.error || '', open: S.todos.filter(t => !t.done).length };
+  const r = todoAdd(text, due); return { ok: r.ok, error: r.error || '', open: S.todos.filter(t => !t.done).length };
 });
 ipcMain.on('quick:close', e => { if (fromWin(e, quickWin)) quickWin.close(); });
 
@@ -503,7 +508,7 @@ app.on('window-all-closed', () => { /* stay running in the tray */ });
 app.whenReady().then(() => {
   lockDownSession();
   load();
-  waterNextAt = Date.now() + S.water.interval * 60000;
+  waterNextAt = Core.gateWater(S, Date.now() + S.water.interval * 60000, Date.now());
   console.log(`Sip started (${process.platform}, Electron ${process.versions.electron}). Water ${S.water.enabled ? 'every ' + S.water.interval + ' min' : 'off'}; ${S.reminders.length} custom reminder(s).`);
   console.log(`Session: type=${process.env.XDG_SESSION_TYPE || '?'} wayland=${process.env.WAYLAND_DISPLAY || '-'} display=${process.env.DISPLAY || '-'} args=${process.argv.slice(1).join(' ')}`);
   applyLogin();
@@ -514,6 +519,7 @@ app.whenReady().then(() => {
   setTimeout(createOverlay, 400);                       // short delay helps transparency on Linux compositors
   setInterval(() => {
     const now = Date.now(); rollover();
+    const gated = Core.gateWater(S, waterNextAt, now); if (gated !== waterNextAt) { waterNextAt = gated; buildTray(); }       // the window closed or opened: the next ask is reset to its opening
     if (!busy) {
       const item = Core.pickNext(S, waterNextAt, now);
       if (item) {

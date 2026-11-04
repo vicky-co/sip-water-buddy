@@ -34,7 +34,7 @@
 
   const DEFAULTS = {
     v: 2, date: '', count: 0, log: [],
-    water: { enabled: true, interval: 30, goal: 8 },
+    water: { enabled: true, interval: 30, goal: 8, window: { enabled: false, start: '08:00', end: '22:00' } },   // window: only ask between start and end
     hero: { name: 'Hero', look: 'default' },
     pet: { name: 'Buddy', look: 'golden', flip: false, sound: 'bigdog', speed: 1 },
     show: 'both',
@@ -115,24 +115,78 @@
   }
 
   // ---------- To-do list ----------
+  // A deadline is optional: 'YYYY-MM-DD' (due by the end of that day) or 'YYYY-MM-DDTHH:MM'.
+  const DUE_RE = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}))?$/;
+  function cleanDue(v) {
+    if (typeof v !== 'string') return null;
+    const m = DUE_RE.exec(v); if (!m || !parseDate(m[1])) return null;
+    return (!m[2] || TIME_RE.test(m[2])) ? v : null;
+  }
+  const dueAt = due => { const m = typeof due === 'string' && DUE_RE.exec(due); if (!m) return null; return m[2] ? atLocal(m[1], m[2]) : atLocal(m[1], '23:59') + 59999; };
+  const isOverdue = (t, now) => !t.done && !!t.due && dueAt(t.due) != null && dueAt(t.due) < now;
   const cleanTodo = t => {
     t = obj(t); const text = cleanText(t.text, 120); if (!text) return null;
     return { id: (typeof t.id === 'string' && /^[\w-]{6,40}$/.test(t.id)) ? t.id : null, text, done: t.done === true,
-      createdAt: Number.isFinite(t.createdAt) ? t.createdAt : 0, doneAt: t.done === true && Number.isFinite(t.doneAt) ? t.doneAt : null };
+      createdAt: Number.isFinite(t.createdAt) ? t.createdAt : 0, doneAt: t.done === true && Number.isFinite(t.doneAt) ? t.doneAt : null, due: cleanDue(t.due) };
   };
-  function addTodo(s, text, now, id) {
+  function addTodo(s, text, now, id, due) {
     const clean = cleanText(text, 120);
     if (!clean) return fail('Type what you need to do.');
     if (s.todos.length >= MAX_TODOS) return fail('The list is full (' + MAX_TODOS + '). Clear some finished ones first.');
-    const todo = { id, text: clean, done: false, createdAt: now, doneAt: null };
+    const hasDue = due !== undefined && due !== null && due !== '';
+    if (hasDue && !cleanDue(due)) return fail('Pick a valid deadline.');
+    const todo = { id, text: clean, done: false, createdAt: now, doneAt: null, due: hasDue ? due : null };
     s.todos.push(todo); return { ok: true, todo };
   }
   function setTodoDone(s, id, done, now) {
     const t = s.todos.find(x => x.id === id); if (!t) return fail('That item is gone.');
     t.done = done === true; t.doneAt = t.done ? now : null; return { ok: true, todo: t };
   }
+  function setTodoDue(s, id, due) {
+    const t = s.todos.find(x => x.id === id); if (!t) return fail('That item is gone.');
+    if (due === undefined || due === null || due === '') { t.due = null; return { ok: true, todo: t }; }
+    if (!cleanDue(due)) return fail('Pick a valid deadline.');
+    t.due = due; return { ok: true, todo: t };
+  }
   function deleteTodo(s, id) { const n = s.todos.length; s.todos = s.todos.filter(x => x.id !== id); return n !== s.todos.length; }
   function clearDoneTodos(s) { const n = s.todos.length; s.todos = s.todos.filter(x => !x.done); return n - s.todos.length; }
+
+  // ---------- Water: only ask inside a window of the day ----------
+  const isTime = v => typeof v === 'string' && TIME_RE.test(v);
+  const toMin = hm => { const m = TIME_RE.exec(hm); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+  function cleanWindow(w) {
+    w = obj(w); const d = DEFAULTS.water.window;
+    const start = isTime(w.start) ? w.start : d.start, end = isTime(w.end) ? w.end : d.end;
+    return start === end ? { enabled: false, start: d.start, end: d.end } : { enabled: w.enabled === true, start, end };
+  }
+  // The window may run past midnight (22:00 to 06:00). The start is included, the end is not.
+  function inWaterWindow(w, ts) {
+    if (!w || !w.enabled) return true;
+    const d = new Date(ts), m = d.getHours() * 60 + d.getMinutes(), a = toMin(w.start), b = toMin(w.end);
+    return a < b ? (m >= a && m < b) : (m >= a || m < b);
+  }
+  // The next time the window opens, strictly after ts.
+  function nextWaterStart(w, ts) {
+    const a = toMin(w.start), d = new Date(ts);
+    let t = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(a / 60), a % 60, 0, 0).getTime();
+    if (t <= ts) { const n = new Date(t); n.setDate(n.getDate() + 1); t = n.getTime(); }
+    return t;
+  }
+  // Where the next water ask may really land: inside the window. Called every minute, so it is also what "resets" the asks
+  // when the window closes (the next one becomes the opening time) and what follows the window when the person edits it.
+  function gateWater(state, nextAt, now) {
+    const w = state.water.window; if (!state.water.enabled || !w.enabled || nextAt == null) return nextAt;
+    if (!inWaterWindow(w, now)) { const open = nextWaterStart(w, now); return nextAt < open ? open : (inWaterWindow(w, nextAt) ? nextAt : nextWaterStart(w, nextAt)); }
+    return inWaterWindow(w, nextAt) ? nextAt : nextWaterStart(w, nextAt);
+  }
+  // The person changed the window (or it was switched off). If the asks had been pushed out to the next opening and the window now
+  // covers this moment (start moved earlier, end moved later, or the window was turned off), they resume instead of staying quiet.
+  function rescheduleWater(state, nextAt, now) {
+    const w = state.water.window, cycle = state.water.interval * 60000;
+    let base = nextAt == null ? now + cycle : nextAt;
+    if (base > now + cycle) base = now + (w.enabled ? 60000 : cycle);
+    return gateWater(state, base, now);
+  }
 
   // ---------- Reminders ----------
   // Reads the schedule fields for r.kind from src into r, validates them, and works out nextAt. Returns an error string or null.
@@ -245,7 +299,7 @@
   function pickNext(state, waterNextAt, now) {
     const due = state.reminders.filter(r => isDue(r, now)).sort((a, b) => a.nextAt - b.nextAt);
     if (due.length) return { type: 'reminder', id: due[0].id };
-    if (state.water.enabled && waterNextAt != null && now >= waterNextAt) return { type: 'water' };
+    if (state.water.enabled && waterNextAt != null && now >= waterNextAt && inWaterWindow(state.water.window, now)) return { type: 'water' };
     return null;
   }
   function nextEvent(state, waterNextAt) {
@@ -300,6 +354,7 @@
     s.water.enabled = typeof w.enabled === 'boolean' ? w.enabled : true;
     s.water.interval = clampInt(w.interval !== undefined ? w.interval : raw.interval, 1, 720, 30);
     s.water.goal = clampInt(w.goal !== undefined ? w.goal : raw.goal, 1, 30, 8);
+    s.water.window = cleanWindow(w.window);
     const h = obj(raw.hero);
     s.hero.name = cleanText(h.name, 24) || 'Hero';
     const hl = h.look !== undefined ? h.look : (raw.avatar === '3d' ? 'default' : raw.avatar);
@@ -367,6 +422,16 @@
     const w = obj(patch.water);
     if ('enabled' in w) typeof w.enabled === 'boolean' ? set(s.water, 'enabled', w.enabled, 'water.enabled') : rejected.push('water.enabled');
     if ('interval' in w) { const n = clampInt(w.interval, 1, 720, NaN); Number.isFinite(n) ? set(s.water, 'interval', n, 'water.interval') : rejected.push('water.interval'); }
+    if ('window' in w) {
+      const ww = obj(w.window), cur = s.water.window, next = { enabled: cur.enabled, start: cur.start, end: cur.end };
+      let bad = false;
+      if ('enabled' in ww) typeof ww.enabled === 'boolean' ? next.enabled = ww.enabled : bad = true;
+      if ('start' in ww) isTime(ww.start) ? next.start = ww.start : bad = true;
+      if ('end' in ww) isTime(ww.end) ? next.end = ww.end : bad = true;
+      if (next.start === next.end) bad = true;                                       // an empty window would never ask
+      if (bad) rejected.push('water.window');
+      else for (const k of ['enabled', 'start', 'end']) set(cur, k, next[k], 'water.window.' + k);
+    }
     if ('goal' in w) { const n = clampInt(w.goal, 1, 30, NaN); Number.isFinite(n) ? set(s.water, 'goal', n, 'water.goal') : rejected.push('water.goal'); }
     const ft = obj(patch.features);
     if ('todos' in ft) typeof ft.todos === 'boolean' ? set(s.features, 'todos', ft.todos, 'features.todos') : rejected.push('features.todos');
@@ -389,5 +454,5 @@
   return { LEAVE, DEFAULTS, SPEEDS, SHOW, PET_LOOKS, PET_SOUNDS, KINDS, MAX_REMINDERS, DAY_NAMES, FILE,
     cleanText, clampInt, isHeroLook, isPetLook, isPetSound, parseDate, atLocal, todayStr, nextDue,
     makeReminder, updateReminder, afterAction, catchUp, isDue, describe, pickNext, nextEvent, applyFinish,
-    normalize, applyPatch, rollover, stats, dayKey, MAX_TODOS, addTodo, setTodoDone, deleteTodo, clearDoneTodos };
+    normalize, applyPatch, cleanDue, dueAt, isOverdue, setTodoDue, inWaterWindow, nextWaterStart, gateWater, rescheduleWater, rollover, stats, dayKey, MAX_TODOS, addTodo, setTodoDone, deleteTodo, clearDoneTodos };
 });

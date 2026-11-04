@@ -211,6 +211,62 @@ app.whenReady().then(async () => {
     await run(sw, "document.querySelector('#tab-todos').click()"); await sleep(300); await shot(sw, 'settings-todos');
     await run(sw, "document.querySelector('#tab-general').click()");
 
+    // ---- 2.3: fixed footer, to-do deadlines, and the water window ----
+    check('the credit bar stays at the bottom of the window while a long tab scrolls', await run(sw, `(() => { const g = document.querySelector('#tab-general'); g.click(); const sec = document.querySelector('#panel-general'); const f = () => Math.round(document.querySelector('.brandbar').getBoundingClientRect().bottom); const a = f(); sec.scrollTop = 99999; return sec.scrollHeight > sec.clientHeight && a === innerHeight && f() === a && sec.scrollTop > 0; })()`));
+    check('...and on every tab, even a short one', await run(sw, "(async () => { for (const t of ['characters','reminders','todos','stats','sounds','general']) { document.querySelector('#tab-' + t).click(); await new Promise(r => setTimeout(r, 60)); if (Math.round(document.querySelector('.brandbar').getBoundingClientRect().bottom) !== innerHeight) return t; } return true; })()"));
+    const ymdOf = (d, off = 0) => { const x = new Date(d); x.setDate(x.getDate() + off); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+    const today = ymdOf(Date.now()), yesterday = ymdOf(Date.now(), -1), nextWeek = ymdOf(Date.now(), 7);
+    await run(sw, "sipSettings.getState().then(s => Promise.all(s.todos.map(t => sipSettings.todoDelete(t.id))))");
+    check('a to-do can be added without a deadline, with a date, or with a date and time', await run(sw, `(async () => { const a = await sipSettings.todoAdd('No deadline'), b = await sipSettings.todoAdd('Late one', '${yesterday}T09:00'), c = await sipSettings.todoAdd('Later', '${nextWeek}'); const t = c.view.todos; return a.ok && b.ok && c.ok && t.length === 3 && t[0].due === null && t[1].due === '${yesterday}T09:00' && t[2].due === '${nextWeek}'; })()`));
+    check('an invalid deadline is refused and nothing is added', await run(sw, "(async () => { const r1 = await sipSettings.todoAdd('Bad', '2026-02-30'), r2 = await sipSettings.todoAdd('Bad', 'tomorrow'), r3 = await sipSettings.todoAdd('Bad', { x: 1 }); const v = await sipSettings.getState(); return !r1.ok && !r2.ok && !r3.ok && v.todos.length === 3; })()"));
+    check('past deadlines are flagged overdue, later ones are not', await run(sw, "sipSettings.getState().then(s => { const o = Object.fromEntries(s.todos.map(t => [t.text, t.overdue])); return o['Late one'] === true && o['Later'] === false && o['No deadline'] === false; })"));
+    check('the tray shows how many are overdue', !!menuItem('Show todos (3 open, 1 overdue)'), trayMenu.map(i => i.label));
+    await run(sw, "document.querySelector('#tab-todos').click()"); await sleep(400);
+    check('the list shows an Overdue badge and puts the soonest deadline first, undated last', await run(sw, "(() => { const li = [...document.querySelectorAll('#todoList li')]; const names = li.map(x => x.querySelector('label span').textContent); return names.join('|') === 'Late one|Later|No deadline' && li[0].classList.contains('late') && /^Overdue/.test(li[0].querySelector('.badge').textContent) && /^Due in/.test(li[1].querySelector('.badge').textContent) && !li[2].querySelector('.badge'); })()"));
+    await run(sw, `(() => { const i = [...document.querySelectorAll('#todoList li')].find(x => x.textContent.includes('No deadline')).querySelectorAll('input')[1]; i.value = '${today}'; i.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(500);
+    check('a deadline can be set on an existing item (date only: due by the end of today, so not overdue)', await run(sw, `sipSettings.getState().then(s => { const t = s.todos.find(x => x.text === 'No deadline'); return t.due === '${today}' && t.overdue === false; })`));
+    await run(sw, `(() => { const li = [...document.querySelectorAll('#todoList li')].find(x => x.textContent.includes('No deadline')); const [, d, t] = li.querySelectorAll('input'); t.value = '23:30'; t.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(500);
+    check('a time can be added to it', await run(sw, `sipSettings.getState().then(s => s.todos.find(x => x.text === 'No deadline').due === '${today}T23:30')`));
+    await run(sw, `(() => { const li = [...document.querySelectorAll('#todoList li')].find(x => x.textContent.includes('No deadline')); const d = li.querySelectorAll('input')[1]; d.value = ''; d.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(500);
+    check('clearing the date removes the deadline', await run(sw, "sipSettings.getState().then(s => s.todos.find(x => x.text === 'No deadline').due === null)"));
+    await run(sw, "(() => { const f = document.getElementById('todoText'); f.value = 'With form deadline'; document.getElementById('todoDue').value = '" + nextWeek + "'; document.getElementById('todoDue').dispatchEvent(new Event('input')); document.getElementById('todoDueTime').value = '08:15'; document.getElementById('todoForm').requestSubmit(); })()"); await sleep(600);
+    check('the add form takes an optional deadline', await run(sw, `sipSettings.getState().then(s => (s.todos.find(x => x.text === 'With form deadline') || {}).due === '${nextWeek}T08:15')`));
+    menuItem('Quick add todo').click();
+    const qw2 = await waitFor(() => win('Sip Quick Add'), 10000);
+    await run(qw2, `(() => { document.getElementById('text').value = 'Quick with deadline'; const d = document.getElementById('due'); d.value = '${nextWeek}'; d.dispatchEvent(new Event('input')); document.getElementById('dueTime').value = '17:45'; document.getElementById('form').requestSubmit(); })()`);
+    check('quick add takes an optional deadline too', await waitFor(() => run(sw, `sipSettings.getState().then(s => (s.todos.find(x => x.text === 'Quick with deadline') || {}).due === '${nextWeek}T17:45')`), 8000, 100));
+    await waitFor(() => !win('Sip Quick Add'), 8000, 100);
+    await shot(sw, 'settings-todos-deadlines');
+
+    // water window: asks only inside the hours, reset at the end, resume when the hours are widened
+    const hm = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+    const H = 3600000, M = 60000, st2 = () => run(sw, "sipSettings.getState().then(s => s.water)");
+    await run(sw, "sipSettings.patch({ water: { enabled: true, interval: 30, window: { enabled: false } } })");
+    check('water window: an empty window (same start and end) is refused', await run(sw, "sipSettings.patch({ water: { window: { enabled: true, start: '10:00', end: '10:00' } } }).then(r => r.rejected.includes('water.window'))") && (await st2()).window.enabled === false);
+    check('water window: a bad time is refused', await run(sw, "sipSettings.patch({ water: { window: { start: '25:61' } } }).then(r => r.rejected.includes('water.window'))"));
+    // a window that opens in two hours: the next ask is moved to its opening
+    const tw0 = Date.now(); let w = (await run(sw, `sipSettings.patch({ water: { window: { enabled: true, start: '${hm(tw0 + 2 * H)}', end: '${hm(tw0 + 3 * H)}' } } }).then(r => r.view.water)`));
+    check('water window: outside the hours the next ask waits for the opening', Math.abs(w.nextAt - (tw0 + 2 * H)) < 2 * M + 1000, [new Date(w.nextAt).toString(), hm(tw0 + 2 * H)]);
+    // the window is widened so that it covers now: asks resume about a minute later instead of waiting for the opening
+    w = await run(sw, `sipSettings.patch({ water: { window: { start: '${hm(Date.now() - H)}', end: '${hm(Date.now() + H)}' } } }).then(r => r.view.water)`);
+    check('water window: widening it over "now" brings the asks back within a couple of minutes', w.nextAt > Date.now() && w.nextAt < Date.now() + 3 * M, new Date(w.nextAt).toString());
+    // the window is moved so that it ended an hour ago: the ask is reset to the next opening (tomorrow)
+    w = await run(sw, `sipSettings.patch({ water: { window: { start: '${hm(Date.now() - 3 * H)}', end: '${hm(Date.now() - H)}' } } }).then(r => r.view.water)`);
+    const opening = new Date(); opening.setHours(+hm(Date.now() - 3 * H).slice(0, 2), +hm(Date.now() - 3 * H).slice(3), 0, 0); if (opening.getTime() <= Date.now()) opening.setDate(opening.getDate() + 1);
+    check('water window: after the end the ask is reset to the opening time', Math.abs(w.nextAt - opening.getTime()) < 2 * M + 1000, [new Date(w.nextAt).toString(), opening.toString()]);
+    // ... then the end is made later again: asks resume
+    w = await run(sw, `sipSettings.patch({ water: { window: { end: '${hm(Date.now() + H)}' } } }).then(r => r.view.water)`);
+    check('water window: raising the end time after the reset brings the asks back', w.nextAt > Date.now() && w.nextAt < Date.now() + 3 * M, new Date(w.nextAt).toString());
+    w = await run(sw, "sipSettings.patch({ water: { window: { enabled: false } } }).then(r => r.view.water)");
+    check('water window: switching it off goes back to the normal interval', w.nextAt > Date.now() && w.nextAt <= Date.now() + 31 * M, new Date(w.nextAt).toString());
+    await run(sw, "document.querySelector('#tab-reminders').click()"); await sleep(400);
+    check('water window: the Reminders tab has the controls', await run(sw, "!!document.getElementById('winOn') && !!document.getElementById('winStart') && !!document.getElementById('winEnd')"));
+    await run(sw, `(() => { const c = document.getElementById('winOn'); if (!c.checked) c.click(); })()`); await sleep(500);
+    check('water window: ticking the box in the page turns it on', await run(sw, "sipSettings.getState().then(s => s.water.window.enabled === true)"));
+    await shot(sw, 'settings-water-window');
+    await run(sw, "sipSettings.patch({ water: { interval: 45, window: { enabled: false } } })");          // back to what the later checks expect
+    await run(sw, "document.querySelector('#tab-general').click()");
+
     // ---- credit and links ----
     check('credit footer names the author and links to GitHub and LinkedIn', await run(sw, `(() => { const f = document.querySelector('.brandbar'); const l = f.querySelector('a[data-link=linkedin]'), g = f.querySelector('a[data-link=repo]'); return f.textContent.includes(${JSON.stringify(Brand.author)}) && l.href === ${JSON.stringify(Brand.linkedinUrl)} && g.href === ${JSON.stringify(Brand.repoUrl)}; })()`));
     check('credit footer visible on every tab', await run(sw, "(async () => { for (const t of ['characters','reminders','sounds','general']) { document.querySelector('#tab-' + t).click(); await new Promise(r => setTimeout(r, 80)); const r = document.querySelector('.brandbar').getBoundingClientRect(); if (r.height < 20 || r.bottom > innerHeight + 1) return false; } return true; })()"));

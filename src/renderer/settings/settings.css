@@ -19,7 +19,9 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.45 "Ubuntu", "Sego
 [role="tab"]:hover { background: var(--accent-soft); }
 [role="tab"][aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
 .side-foot { margin-top: auto; font-size: 12px; color: var(--muted); padding: 0 8px; }
-main { overflow-y: auto; padding: 22px 28px 40px; position: relative; }
+/* The page is a column: the active tab scrolls, the credit bar below it never moves. */
+main { display: flex; flex-direction: column; overflow: hidden; padding: 0; position: relative; min-height: 0; }
+main > section { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 22px 28px 24px; }
 section[hidden] { display: none; }
 h1 { font-size: 24px; margin: 0 0 14px; }
 h2 { font-size: 16px; margin: 0 0 8px; }
@@ -107,7 +109,7 @@ legend { font-weight: 600; font-size: 13px; padding: 0; margin-bottom: 6px; }
 .rem .acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 .error { color: var(--danger); font-weight: 600; margin: 6px 0; }
-#toast { position: sticky; top: 0; z-index: 5; margin: -6px 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--ok); color: #fff; font-weight: 600; }
+#toast { position: absolute; top: 10px; left: 28px; right: 28px; z-index: 5; margin: 0; padding: 10px 14px; border-radius: 10px; background: var(--ok); color: #fff; font-weight: 600; }
 #toast.bad { background: var(--danger); }
 .diag { display: grid; grid-template-columns: 90px 1fr; gap: 4px 12px; margin: 0; }
 .diag dt { font-weight: 600; } .diag dd { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
@@ -115,7 +117,7 @@ legend { font-weight: 600; font-size: 13px; padding: 0; margin-bottom: 6px; }
 .plain li { margin: 4px 0; }
 
 
-.brandbar { position: sticky; bottom: -40px; margin: 26px -28px -40px; padding: 10px 28px; background: var(--side); border-top: 1px solid var(--line);
+.brandbar { flex: none; margin: 0; padding: 10px 28px; background: var(--side); border-top: 1px solid var(--line);
   display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--muted); }
 .brandbar .links { display: flex; gap: 14px; flex-wrap: wrap; }
 a[data-link] { color: var(--accent); font-weight: 600; text-decoration: none; cursor: pointer; }
@@ -130,10 +132,21 @@ a.btn[data-link]:hover { text-decoration: none; }
 .card.dim::before { content: 'Hidden right now'; display: inline-block; font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
 
 /* ---- to-dos ---- */
-.todoadd { display: flex; gap: 8px; }
+.todoadd { display: flex; flex-wrap: wrap; gap: 8px; }
+.dueadd { flex: 1 0 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 13px; }
+.duelbl { font-weight: 600; }
 .todoadd input { flex: 1; min-width: 0; }
 .todos { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.todos li { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.todos li { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.todoline { display: flex; align-items: center; gap: 8px; }
+.dueline { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-left: 28px; font-size: 12.5px; color: var(--muted); }
+.dueline input { padding: 3px 6px; font-size: 12.5px; }
+.badge { padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); font-weight: 600; }
+.badge.late { color: var(--danger); border-color: var(--danger); }
+.badge.soon { color: var(--warn); border-color: var(--warn); }
+.todos li.late { border-color: var(--danger); }
+.winbox { margin: 12px 0 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.winbox .fields { margin-top: 2px; }
 .todos label { flex: 1; display: flex; align-items: center; gap: 10px; cursor: pointer; min-width: 0; }
 .todos label span { overflow-wrap: anywhere; }
 .todos input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px; flex: none; }
@@ -158,3 +171,5 @@ a.btn[data-link]:hover { text-decoration: none; }
 .stable th:first-child, .stable td:first-child { text-align: left; }
 .stable tr.empty td { color: var(--muted); }
 details.card > summary { cursor: pointer; font-weight: 600; }
+.dueline input, .dueadd input { width: auto; min-width: 0; }
+.dueadd input { padding: 6px 8px; }
