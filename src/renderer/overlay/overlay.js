@@ -816,19 +816,19 @@
     const r = await api.logGlass(); count = r.count; goal = r.goal; Sound.cheer();
     const msg = count === goal ? `${count} of ${goal}. Goal complete. Semma!` :
                 count > goal ? `${count} glasses today. Next level, boss.` : `Mass! That's ${count} of ${goal} today.`;
-    farewell({ say:msg, react:'drink', fade:interval, info:{type:'water', minutes:interval},
+    farewell({ say:msg, react:'drink', fade:interval, info:{type:'water', action:'done', minutes:interval},
       normal:[{pose:'drink',dur:2.6}, {say:msg, ms:5000}, {pose:'step',dur:2.4}, {pose:'point',dur:1.6}, {walk:otherT}, {pose:'spin',dur:1.2}] });
   });
   $('#no').addEventListener('click', () => {
     if (!atAsk()) return;
     const msg = "5 minutes, boss. I'm coming back.";
-    farewell({ say:msg, react:'shrug', fade:5, info:{type:'water', minutes:5},
+    farewell({ say:msg, react:'shrug', fade:5, info:{type:'water', action:'snooze', minutes:5},
       normal:[{say:msg, ms:4500}, {pose:'shrug',dur:1.6}, {pose:'point',dur:1.6}, {walk:anyT}] });
   });
   $('#skip').addEventListener('click', () => {
     if (!atAsk()) return;
     const msg = `Okay, skipping this one. See you ${ivText().replace('every ', 'in ')}.`;
-    farewell({ say:msg, react:'collar', fade:interval, info:{type:'water', minutes:interval},
+    farewell({ say:msg, react:'collar', fade:interval, info:{type:'water', action:'skip', minutes:interval},
       normal:[{say:msg, ms:4500}, {pose:'collar',dur:1.6}, {walk:anyT}, {pose:'spin',dur:1.2}] });
   });
   // reminders (anything other than water)

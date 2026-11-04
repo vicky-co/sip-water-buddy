@@ -1,0 +1,16 @@
+:root { --bg: #f6f8fa; --card: #fff; --ink: #14212e; --muted: #5b6b7b; --line: #d3dce5; --accent: #1e88e5; --accent-ink: #fff; --danger: #c0392b; --ok: #1b7f4b; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0f1720; --card: #16212d; --ink: #e6eef6; --muted: #9bb0c4; --line: #2a3b4d; --accent: #4da3f0; --accent-ink: #06121d; --danger: #ff8a7a; --ok: #5fd39a; } }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, "Segoe UI", Ubuntu, "Noto Sans", sans-serif; }
+main { padding: 18px 20px; }
+h1 { font-size: 17px; margin: 0 0 12px; }
+input[type="text"] { width: 100%; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+input[type="text"]:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+button { font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.hint { margin-left: auto; color: var(--muted); font-size: 12px; }
+#msg { margin: 8px 0 0; min-height: 20px; font-size: 13px; color: var(--ok); }
+#msg.err { color: var(--danger); }
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

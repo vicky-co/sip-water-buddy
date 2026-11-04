@@ -15,6 +15,8 @@
     <div role="tablist" aria-orientation="vertical" id="tabs">
       <button type="button" role="tab" id="tab-characters" aria-controls="panel-characters" aria-selected="true" data-tab="characters"><span aria-hidden="true">🧑‍🚀</span> Characters</button>
       <button type="button" role="tab" id="tab-reminders" aria-controls="panel-reminders" aria-selected="false" tabindex="-1" data-tab="reminders"><span aria-hidden="true">⏰</span> Reminders</button>
+      <button type="button" role="tab" id="tab-todos" aria-controls="panel-todos" aria-selected="false" tabindex="-1" data-tab="todos"><span aria-hidden="true">✅</span> To-dos</button>
+      <button type="button" role="tab" id="tab-stats" aria-controls="panel-stats" aria-selected="false" tabindex="-1" data-tab="stats"><span aria-hidden="true">📊</span> Stats</button>
       <button type="button" role="tab" id="tab-sounds" aria-controls="panel-sounds" aria-selected="false" tabindex="-1" data-tab="sounds"><span aria-hidden="true">🔊</span> Sounds</button>
       <button type="button" role="tab" id="tab-general" aria-controls="panel-general" aria-selected="false" tabindex="-1" data-tab="general"><span aria-hidden="true">⚙️</span> General</button>
     </div>
@@ -138,7 +140,51 @@
       </div>
     </section>
 
-    <!-- ===== Sounds ===== -->
+        <!-- ===== To-dos ===== -->
+    <section role="tabpanel" id="panel-todos" aria-labelledby="tab-todos" hidden>
+      <h1>To-dos</h1>
+      <div class="card">
+        <form id="todoForm" class="todoadd" autocomplete="off">
+          <input id="todoText" type="text" maxlength="120" placeholder="What do you need to do?" aria-label="New to-do">
+          <button type="submit" class="btn primary">Add</button>
+        </form>
+        <p class="hint small" id="todoErr" role="alert" hidden></p>
+        <p class="hint small">Tip: the tray menu has <strong>Quick add todo…</strong> so you can jot one down without opening Settings.</p>
+      </div>
+      <div class="card">
+        <div class="rowbetween"><h2 id="todoCount">To do</h2><button type="button" class="btn small" id="todoClear">Clear completed</button></div>
+        <ul class="todos" id="todoList" aria-labelledby="todoCount"></ul>
+        <p class="hint" id="todoEmpty">Nothing here yet. Add your first to-do above.</p>
+      </div>
+    </section>
+
+    <!-- ===== Stats ===== -->
+    <section role="tabpanel" id="panel-stats" aria-labelledby="tab-stats" hidden>
+      <h1>Last 30 days</h1>
+      <p class="hint">Sip keeps a small daily history on this computer. Days when Sip was not running, or from before this page existed, show as empty.</p>
+      <div class="tiles" id="statTiles"></div>
+      <div class="card">
+        <h2>Glasses per day</h2>
+        <p class="hint small">Each bar is one day. The line is your goal for that day; green bars reached it.</p>
+        <div class="chart" id="chartGlasses"></div>
+      </div>
+      <div class="card">
+        <h2>Deviation from your goal</h2>
+        <p class="hint small">Glasses minus goal. Above the line you drank more than planned, below it less.</p>
+        <div class="chart" id="chartDev"></div>
+      </div>
+      <div class="card">
+        <h2>Skipped time</h2>
+        <p class="hint small">Minutes of water check-ins you tapped <em>Skip</em> on (the interval you went without a reminder).</p>
+        <div class="chart" id="chartSkip"></div>
+      </div>
+      <details class="card">
+        <summary>Show the numbers</summary>
+        <table class="stable" id="statTable"><thead><tr><th scope="col">Day</th><th scope="col">Glasses</th><th scope="col">Goal</th><th scope="col">Deviation</th><th scope="col">Skipped</th><th scope="col">Skipped time</th><th scope="col">Not yet</th></tr></thead><tbody></tbody></table>
+      </details>
+    </section>
+
+<!-- ===== Sounds ===== -->
     <section role="tabpanel" id="panel-sounds" aria-labelledby="tab-sounds" hidden>
       <h1>Sounds</h1>
       <div class="card">
@@ -164,6 +210,11 @@
         <h2>Start-up</h2>
         <label class="check" id="loginRow"><input type="checkbox" id="startAtLogin"> <span>Start Sip when I sign in</span></label>
         <p class="hint small" id="loginNote" hidden>Available once Sip is installed with its installer script.</p>
+      </div>
+      <div class="card">
+        <h2>To-do list</h2>
+        <label class="check"><input type="checkbox" id="todosOn"> <span>Show the to-do list (To-dos tab and tray menu)</span></label>
+        <p class="hint small">Your items are kept when you switch it off.</p>
       </div>
       <div class="card">
         <h2>After you answer</h2>

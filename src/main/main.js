@@ -85,7 +85,7 @@ function load() {
   try { if (fs.existsSync(userDir('dogs')) && !fs.existsSync(userDir('pets'))) fs.renameSync(userDir('dogs'), userDir('pets')); } catch (e) { /* ignore */ }
   saveNow();
 }
-function rollover() { const t = Core.todayStr(); if (S.date !== t) { S.date = t; S.count = 0; S.log = []; save(); } }
+function rollover() { if (Core.rollover(S)) save(); }        // also files the finished day in the history for the 30-day statistics
 
 // ---------- Characters and sounds: built-in and added by the person ----------
 const BUILTIN = {
@@ -263,6 +263,7 @@ function finish(info) {
   info = info && typeof info === 'object' ? info : {};
   const clean = { type: ['water', 'reminder', 'hello'].includes(info.type) ? info.type : 'hello', id: typeof info.id === 'string' ? info.id.slice(0, 40) : '',
     action: ['done', 'skip', 'snooze'].includes(info.action) ? info.action : '', minutes: Number.isFinite(info.minutes) ? info.minutes : undefined, preview: info.preview === true };
+  rollover();
   waterNextAt = Core.applyFinish(S, clean, Date.now(), waterNextAt);
   busy = false; active = null;
   if (overlay && !overlay.isDestroyed()) overlay.hide();
@@ -288,6 +289,7 @@ function viewState() {
   return {
     now: Date.now(), version: APP_VERSION, electron: process.versions.electron, platform: process.platform,
     show: S.show, hero: { ...S.hero }, pet: { ...S.pet }, sound: { ...S.sound }, startAtLogin: S.startAtLogin, autostartSupported: autostartSupported(), behavior: { ...S.behavior },
+    features: { ...S.features }, todos: S.todos.map(t => ({ ...t })), stats: Core.stats(S),
     water: { ...S.water, count: S.count, nextAt: S.water.enabled ? waterNextAt : null },
     heroLooks: looksFor('avatar'), petLooks: looksFor('pet'), petSounds: looksFor('sound'),
     reminders: S.reminders.map(r => ({ ...r, describe: Core.describe(r) })),
@@ -308,10 +310,15 @@ function buildTray() {
   const items = [];
   if (S.water.enabled) items.push({ label: `Water today: ${S.count} of ${S.water.goal} glasses`, enabled: false });
   items.push({ label: busy ? 'Checking in now' : next ? `Next: ${next.label} at ${fmtWhen(next.at)}` : 'No reminders scheduled', enabled: false });
-  items.push({ type: 'separator' },
-    { label: 'Open Settings…', click: () => openSettings() },
-    { label: 'Add a reminder…', click: () => openSettings('reminders-add') },
-    { label: 'Show me now', click: () => askNow() });
+  items.push({ type: 'separator' });
+  if (S.features.todos) items.push({ label: 'Quick add todo…', click: () => openQuickAdd() });                // first, so it is one click from the icon
+  items.push({ label: 'Open Settings…', click: () => openSettings() },
+    { label: 'Add a reminder…', click: () => openSettings('reminders-add') });
+  if (S.features.todos) {
+    const open = S.todos.filter(t => !t.done).length;
+    items.push({ label: open ? `Show todos (${open} open)` : 'Show todos', click: () => openSettings('todos') });
+  }
+  items.push({ label: 'Show me now', click: () => askNow() });
   if (S.water.enabled) items.push({ label: 'I just had water', click: () => { rollover(); S.count = Math.min(999, S.count + 1); S.log.push(Date.now()); S.log = S.log.slice(-200); waterNextAt = Date.now() + S.water.interval * 60000; save(); refreshUi(); } });
   items.push({ type: 'separator' }, { label: 'Uninstall Sip completely…', click: () => { uninstallEverything(); } }, { label: 'Quit', click: () => app.quit() });
   tray.setContextMenu(Menu.buildFromTemplate(items));
@@ -420,6 +427,40 @@ handleSettings('settings:open-link', async key => {
   try { await shell.openExternal(url); return { ok: true }; } catch (e) { console.error('Could not open link:', e); return { ok: false }; }
 });
 handleSettings('settings:open-log', async () => { await shell.openPath(logFile()); return true; });
+
+// ---------- To-do list ----------
+const todoView = () => viewState();
+function todoAdd(text) {
+  if (!S.features.todos) return { ok: false, error: 'The to-do list is switched off in Settings > General.' };
+  const r = Core.addTodo(S, typeof text === 'string' ? text : '', Date.now(), crypto.randomUUID());
+  if (r.ok) { save(); refreshUi(); }
+  return r;
+}
+handleSettings('settings:todo-add', text => { const r = todoAdd(text); return { ok: r.ok, error: r.error || '', view: todoView() }; });
+handleSettings('settings:todo-done', (id, done) => { const r = Core.setTodoDone(S, typeof id === 'string' ? id.slice(0, 40) : '', done === true, Date.now()); if (r.ok) { save(); refreshUi(); } return { ok: r.ok, view: todoView() }; });
+handleSettings('settings:todo-delete', id => { const ok = Core.deleteTodo(S, typeof id === 'string' ? id.slice(0, 40) : ''); if (ok) { save(); refreshUi(); } return { ok, view: todoView() }; });
+handleSettings('settings:todo-clear-done', () => { const n = Core.clearDoneTodos(S); if (n) { save(); refreshUi(); } return { ok: true, cleared: n, view: todoView() }; });
+
+// A small window to jot a to-do down from the tray menu
+let quickWin = null;
+function openQuickAdd() {
+  if (!S.features.todos) { openSettings('general'); return; }
+  if (quickWin && !quickWin.isDestroyed()) { quickWin.show(); quickWin.focus(); return; }
+  quickWin = new BrowserWindow({
+    width: 460, height: 215, resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, show: false, title: 'Sip Quick Add',
+    autoHideMenuBar: true, backgroundColor: '#f6f8fa', icon: ICON,
+    webPreferences: { ...SAFE_PREFS(), preload: path.join(APP_DIR, 'src', 'preload', 'quickadd-preload.js') },
+  });
+  quickWin.removeMenu();
+  quickWin.once('ready-to-show', () => { quickWin.show(); quickWin.focus(); });
+  quickWin.on('closed', () => { quickWin = null; });
+  quickWin.loadFile(path.join(RENDERER, 'quickadd', 'index.html'));
+}
+ipcMain.handle('quick:add', (e, text) => {
+  if (!fromWin(e, quickWin)) throw new Error('blocked');
+  const r = todoAdd(text); return { ok: r.ok, error: r.error || '', open: S.todos.filter(t => !t.done).length };
+});
+ipcMain.on('quick:close', e => { if (fromWin(e, quickWin)) quickWin.close(); });
 
 // ---------- Uninstall completely ----------
 // Asked for from Settings or the tray. The paths come from uninstall.js (never from a window), the person confirms in a native dialog,

@@ -39,6 +39,10 @@ It is free, open source, and never connects to the internet.
   goodbye message has a **⏩ Go now** button to send them off immediately.
 - **Wait where you want**: tap **📍 Wait here** in their message and click anywhere on any screen; they walk there and wait.
   **📌 Always wait here** (or Settings → General) makes them use that spot every time instead of a random place; **🚶 Roam again** undoes it.
+- **To-do list** (switch it on or off in Settings → General): add items in the **To-dos** tab, tick them off, clear the finished ones.
+  The tray menu has **Show todos** (with how many are open) and **Quick add todo…**, a tiny window to jot one down without opening Settings.
+- **Last 30 days at a glance** (Settings → **Stats**): glasses per day against your goal, how far above or below the goal each day was,
+  and how many check-ins and how many minutes you skipped, with a table of the exact numbers. History starts the day you update; it stays on your computer.
 - **Uninstall from inside the app**: Settings → General → *Uninstall Sip completely…* (or the tray menu). It lists exactly what it will delete and asks first.
 - **Private and safe by design**: no network, no telemetry, strict sandboxing (see [SECURITY.md](SECURITY.md)).
 

@@ -4,6 +4,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-04
+### Added
+- **To-do list**, switched on or off in Settings → General. A **To-dos** tab (add, tick, delete, clear completed) and two tray menu items: **Show todos** (with the number still open) and **Quick add todo…**, which opens a small window so you can jot one down without opening Settings.
+- **Stats tab**: the last 30 days of water as charts: glasses per day against your goal, deviation from the goal (glasses above or below), and skipped time, plus summary tiles and a table of the numbers. Sip now keeps a small daily history (up to 120 days) on your computer; days before this version, or when Sip was not running, show as empty.
+- Skipped and "Not yet" water check-ins are counted (with their minutes) for the statistics.
+
 ## [2.1.1] - 2026-10-24
 ### Fixed
 - **Go now and the goodbye message appear the moment you answer.** Before, tapping *I drank* left the old question on screen with no buttons while the first pose (about 3 seconds) played, and Go now only showed up afterwards.

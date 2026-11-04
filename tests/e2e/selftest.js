@@ -1,7 +1,7 @@
 'use strict';
 // End-to-end check: launches the real app (main process, both windows, real preload scripts) and drives it.
 //   xvfb-run -a electron --no-sandbox --disable-gpu tests/e2e/selftest.js
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, Menu } = require('electron');
 const Brand = require('../../src/main/branding.js');
 const opened = []; shell.openExternal = async u => { opened.push(u); };       // never open a real browser during the test
 const path = require('path'), fs = require('fs');
@@ -11,6 +11,8 @@ app.setPath('userData', DATA);
 const results = [], consoleMsgs = [];
 const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail !== undefined ? '  -> ' + JSON.stringify(detail) : '')); };
 app.on('web-contents-created', (_e, wc) => wc.on('console-message', ev => consoleMsgs.push({ level: ev.level, msg: String(ev.message).slice(0, 300) })));
+let trayMenu = [];                                                               // the tray menu as Sip last built it, so the test can click its items
+const buildMenu = Menu.buildFromTemplate.bind(Menu); Menu.buildFromTemplate = t => { trayMenu = t; return buildMenu(t); };
 require(path.join(__dirname, '..', '..', 'src', 'main', 'main.js'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function waitFor(fn, ms = 60000, step = 300) { const t0 = Date.now(); for (;;) { try { const v = await fn(); if (v) return v; } catch (e) { /* retry */ } if (Date.now() - t0 > ms) return false; await sleep(step); } }
@@ -159,6 +161,54 @@ app.whenReady().then(async () => {
     check('Settings has the leave-time options and an uninstall button', await run(sw, "document.querySelector('#tab-general').click() || (!!document.querySelector('input[name=leave][value=custom]') && !!document.getElementById('uninstall') && typeof sipSettings.uninstall === 'function')"));
     await sleep(300); await shot(sw, 'settings-general');
     screen.getCursorScreenPoint = require('electron').screen.getCursorScreenPoint;
+
+    // ---- 2.2: to-do list, quick add from the tray, and the 30-day statistics ----
+    const menuItem = label => trayMenu.find(i => i.label && i.label.startsWith(label));
+    await run(sw, "document.querySelector('#tab-general').click()");
+    check('tray menu offers "Show todos" and "Quick add todo…" (to-do list is on by default)', !!menuItem('Show todos') && !!menuItem('Quick add todo'));
+    check('Settings has a To-dos tab and a Stats tab', await run(sw, "!document.querySelector('#tab-todos').hidden && !!document.querySelector('#tab-stats')"));
+    let tv = await run(sw, "sipSettings.todoAdd('<b>Buy</b> milk').then(r => ({ ok: r.ok, todos: r.view.todos.map(t => t.text) }))");
+    check('adding a to-do works and strips markup', tv.ok && tv.todos.length === 1 && !/[<>]/.test(tv.todos[0]), tv);
+    check('an empty to-do is refused', await run(sw, "sipSettings.todoAdd('   ').then(r => r.ok === false && r.view.todos.length === 1)"));
+    check('forged to-do calls are ignored (bad id, bad types)', await run(sw, "sipSettings.todoDone({}, true).then(r => r.ok === false).then(a => sipSettings.todoDelete(12345).then(r => a && r.ok === false)).then(a => sipSettings.todoAdd({ text: 'x' }).then(r => a && r.ok === false))"));
+    await run(sw, "document.querySelector('#tab-todos').click()"); await sleep(300);
+    check('the To-dos tab lists it as plain text', await run(sw, "document.querySelectorAll('#todoList li').length === 1 && document.querySelector('#todoList li span').textContent === 'b Buy /b milk' && !document.querySelector('#todoList li img, #todoList li b')"));
+    // quick add from the tray menu
+    menuItem('Quick add todo').click();
+    const qw = await waitFor(() => win('Sip Quick Add'), 10000);
+    check('"Quick add todo…" opens the small quick-add window', !!qw);
+    check('the quick-add window has only its own bridge and no Node', await run(qw, "typeof window.sipQuick === 'object' && typeof require === 'undefined' && typeof process === 'undefined' && typeof window.sip === 'undefined' && typeof window.sipSettings === 'undefined'"));
+    check('the settings window cannot use the quick-add bridge', await run(sw, "typeof window.sipQuick === 'undefined'"));
+    await run(qw, "(() => { document.getElementById('text').value = 'Call the plumber'; document.getElementById('form').requestSubmit(); })()");
+    check('submitting adds the to-do', await waitFor(() => run(sw, "sipSettings.getState().then(s => s.todos.some(t => t.text === 'Call the plumber'))"), 8000, 100));
+    check('the quick-add window closes by itself after adding', await waitFor(() => !win('Sip Quick Add'), 8000, 100));
+    check('the new to-do shows up in the open To-dos tab', await waitFor(() => run(sw, "[...document.querySelectorAll('#todoList li span')].some(s => s.textContent === 'Call the plumber')"), 5000, 100));
+    // finish, clear, delete
+    await run(sw, "document.querySelector('#todoList li input[type=checkbox]').click()"); await sleep(400);
+    tv = await run(sw, "sipSettings.getState().then(s => s.todos.map(t => [t.text, t.done]))");
+    check('ticking an item marks it done', tv.filter(t => t[1]).length === 1, tv);
+    await run(sw, "document.querySelector('#todoClear').click()"); await sleep(400);
+    check('"Clear completed" removes finished ones only', await run(sw, "sipSettings.getState().then(s => s.todos.length === 1 && !s.todos[0].done)"));
+    check('the tray shows how many are open', !!menuItem('Show todos (1 open)'), trayMenu.map(i => i.label));
+    menuItem('Show todos').click(); await sleep(500);
+    check('"Show todos" opens Settings on the To-dos tab', await run(sw, "document.querySelector('#tab-todos').getAttribute('aria-selected') === 'true' && !document.querySelector('#panel-todos').hidden"));
+    await run(sw, "document.querySelector('#todoList li button').click()"); await sleep(400);
+    check('the delete button removes an item', await run(sw, "sipSettings.getState().then(s => s.todos.length === 0)"));
+    // switch it off
+    await run(sw, "sipSettings.todoAdd('Keep me')");
+    await run(sw, "document.querySelector('#tab-general').click(); document.getElementById('todosOn').click()"); await sleep(500);
+    check('switching the to-do list off hides the tab and the tray items', await run(sw, "document.querySelector('#tab-todos').hidden === true") && !menuItem('Show todos') && !menuItem('Quick add todo'));
+    check('adding is refused while it is off, and the items are kept', await run(sw, "sipSettings.todoAdd('nope').then(r => r.ok === false && /switched off/.test(r.error) && r.view.todos.length === 1)"));
+    await run(sw, "document.getElementById('todosOn').click()"); await sleep(500);
+    check('switching it back on brings the tab, the tray items and the list back', await run(sw, "document.querySelector('#tab-todos').hidden === false") && !!menuItem('Quick add todo') && await run(sw, "sipSettings.getState().then(s => s.todos.length === 1)"));
+    // statistics: earlier check-ins in this test were skipped, so they must show up
+    await run(sw, "document.querySelector('#tab-stats').click()"); await sleep(500);
+    const stv = await run(sw, "sipSettings.getState().then(s => s.stats)");
+    check('stats: 30 days, today tracked, skipped check-ins counted with their minutes', stv.days.length === 30 && stv.days[29].has && stv.totals.skips >= 1 && stv.totals.skipMin >= 30, stv.totals);
+    check('stats page draws three charts, six tiles and a 30-row table', await run(sw, "document.querySelectorAll('#panel-stats .chart svg').length === 3 && document.querySelectorAll('#statTiles .tile').length === 6 && document.querySelectorAll('#statTable tbody tr').length === 30 && document.querySelectorAll('#chartGlasses rect').length >= 30"));
+    await shot(sw, 'settings-stats');
+    await run(sw, "document.querySelector('#tab-todos').click()"); await sleep(300); await shot(sw, 'settings-todos');
+    await run(sw, "document.querySelector('#tab-general').click()");
 
     // ---- credit and links ----
     check('credit footer names the author and links to GitHub and LinkedIn', await run(sw, `(() => { const f = document.querySelector('.brandbar'); const l = f.querySelector('a[data-link=linkedin]'), g = f.querySelector('a[data-link=repo]'); return f.textContent.includes(${JSON.stringify(Brand.author)}) && l.href === ${JSON.stringify(Brand.linkedinUrl)} && g.href === ${JSON.stringify(Brand.repoUrl)}; })()`));
