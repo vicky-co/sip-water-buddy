@@ -17,7 +17,8 @@ require(path.join(__dirname, '..', '..', 'src', 'main', 'main.js'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function waitFor(fn, ms = 60000, step = 300) { const t0 = Date.now(); for (;;) { try { const v = await fn(); if (v) return v; } catch (e) { /* retry */ } if (Date.now() - t0 > ms) return false; await sleep(step); } }
 const win = title => BrowserWindow.getAllWindows().find(w => !w.isDestroyed() && w.getTitle() === title);
-const run = (w, code) => w.webContents.executeJavaScript(code, true);
+// a rejected script says which script it was (Electron's own message is just "Script failed to execute")
+const run = (w, code) => w.webContents.executeJavaScript(code, true).catch(e => { throw new Error(String(e && e.message || e) + '\n    in ' + (w.isDestroyed() ? 'a destroyed window' : '"' + w.getTitle() + '" (' + w.webContents.getURL().split('/').slice(-2).join('/') + ')') + ': ' + String(code).replace(/\s+/g, ' ').slice(0, 200)); });
 const shot = async (w, name) => { try { const img = await w.webContents.capturePage(); fs.writeFileSync(path.join(SHOTS, name + '.png'), img.toPNG()); } catch (e) { console.log('shot failed', name, e.message); } };
 
 app.whenReady().then(async () => {
