@@ -116,7 +116,7 @@ t('daylight-saving transitions never loop or skip', () => {
   let cur = base; for (let i = 0; i < 400; i++) { const nx = C.nextDue(r, cur); assert.ok(nx > cur && nx - cur < 26 * 3600000, 'step ' + i); cur = nx; }
 });
 t('behavior settings: leave time and waiting spot are validated', () => {
-  let s = C.normalize({}); assert.deepEqual(s.behavior, { leave: 'normal', leaveSecs: 8, parked: false, spot: null });
+  let s = C.normalize({}); assert.deepEqual(s.behavior, { leave: 'normal', leaveSecs: 8, parked: false, spot: null, todoSpot: null });
   let r = C.applyPatch(s, { behavior: { leave: 'instant', leaveSecs: 500 } }); assert.equal(s.behavior.leave, 'instant'); assert.equal(s.behavior.leaveSecs, 60); assert.deepEqual(r.rejected, []);
   r = C.applyPatch(s, { behavior: { leave: 'forever', leaveSecs: 'abc' } }); assert.deepEqual(r.rejected.sort(), ['behavior.leave', 'behavior.leaveSecs']); assert.equal(s.behavior.leave, 'instant');
   r = C.applyPatch(s, { behavior: { parked: true } }); assert.deepEqual(r.rejected, ['behavior.parked']); assert.equal(s.behavior.parked, false);   // no spot chosen yet
@@ -226,6 +226,87 @@ t('water window: asks stop at the end, restart at the start, and follow edits', 
   // overnight window
   s.water.enabled = true; s.water.window = { enabled: true, start: '22:00', end: '06:00' };
   assert.equal(C.gateWater(s, at(23, 0), at(22, 30)), at(23, 0)); assert.equal(C.gateWater(s, at(6, 10, 11), at(5, 50, 11)), at(22, 0, 11));
+});
+t('to-do deadline reminders: global default, per-to-do override, once, snooze, done', () => {
+  const s = C.normalize({}); const at = (d, h, m = 0) => L(2026, 10, d, h, m), min = 60000;
+  C.addTodo(s, 'Timed', at(1, 8), 'todo-t1', '2026-10-10T15:00');
+  C.addTodo(s, 'Day only', at(1, 8), 'todo-d1', '2026-10-10');
+  C.addTodo(s, 'No deadline', at(1, 8), 'todo-n1');
+  const by = id => s.todos.find(x => x.id === id);
+  assert.deepEqual(s.todoRemind, { enabled: true, before: 30 });
+  assert.equal(C.todoRemindAt(s, by('todo-t1')), at(10, 14, 30));                    // 30 minutes before the time
+  assert.equal(C.todoRemindAt(s, by('todo-d1')), at(10, 8, 30));                     // a date only counts from 09:00
+  assert.equal(C.todoRemindAt(s, by('todo-n1')), null);
+  assert.equal(C.nextTodoReminder(s, at(10, 8, 0)), null);
+  assert.deepEqual(C.nextTodoReminder(s, at(10, 8, 31)), { id: 'todo-d1', late: false });
+  assert.equal(C.pickNext(s, 0, at(10, 8, 31)).type, 'todo');
+  by('todo-d1').reminded = at(10, 8, 31); assert.equal(C.nextTodoReminder(s, at(10, 9, 0)), null);             // once only
+  assert.equal(C.nextTodoReminder(s, at(10, 14, 29)), null);
+  assert.deepEqual(C.nextTodoReminder(s, at(10, 14, 45)), { id: 'todo-t1', late: true });                     // found late (more than 90 s after)
+  assert.equal(C.nextTodoReminder(s, at(10, 17, 5)), null);                                                   // deadline passed more than 2 hours ago: no pop-up (it shows as overdue)
+  assert.equal(C.nextTodoReminder(s, at(10, 16, 55)).id, 'todo-t1');
+  // per-to-do override: 2 hours before, or never
+  assert.ok(C.setTodoRemind(s, 'todo-t1', 120).ok); assert.equal(C.todoRemindAt(s, by('todo-t1')), at(10, 13, 0));
+  assert.ok(C.setTodoRemind(s, 'todo-t1', 'off').ok); assert.equal(C.todoRemindAt(s, by('todo-t1')), null); assert.equal(C.nextTodoReminder(s, at(10, 20)), null);
+  assert.ok(C.setTodoRemind(s, 'todo-t1', 0).ok); assert.equal(C.todoRemindAt(s, by('todo-t1')), at(10, 15, 0));
+  for (const bad of ['soon', -5, 20000, 1.5, {}]) assert.ok(!C.setTodoRemind(s, 'todo-t1', bad).ok, String(bad));
+  assert.ok(C.setTodoRemind(s, 'todo-t1', null).ok); assert.equal(by('todo-t1').remind, null);
+  // global switch off: nothing is reminded unless the to-do has its own setting
+  C.applyPatch(s, { todoRemind: { enabled: false } }); assert.equal(C.todoRemindAt(s, by('todo-t1')), null);
+  C.setTodoRemind(s, 'todo-t1', 10); assert.equal(C.todoRemindAt(s, by('todo-t1')), at(10, 14, 50));
+  C.applyPatch(s, { todoRemind: { enabled: true, before: 60 } }); C.setTodoRemind(s, 'todo-t1', null); assert.equal(C.todoRemindAt(s, by('todo-t1')), at(10, 14, 0));
+  assert.deepEqual(C.applyPatch(s, { todoRemind: { before: -1 } }).rejected, ['todoRemind.before']); assert.deepEqual(C.applyPatch(s, { todoRemind: { before: 'x', enabled: 1 } }).rejected.sort(), ['todoRemind.before', 'todoRemind.enabled']);
+  // answering: snooze brings it back later, done finishes it, and every answer is in today's log
+  s.date = C.todayStr(at(10, 9)); by('todo-t1').reminded = at(10, 14, 0);
+  C.applyFinish(s, { type: 'todo', id: 'todo-t1', action: 'snooze', minutes: 10 }, at(10, 14, 1), 0, () => 'log-aaaaaa');
+  assert.equal(by('todo-t1').snoozeUntil, at(10, 14, 11)); assert.equal(C.nextTodoReminder(s, at(10, 14, 5)), null); assert.equal(C.nextTodoReminder(s, at(10, 14, 12)).id, 'todo-t1');
+  C.applyFinish(s, { type: 'todo', id: 'todo-t1', action: 'done' }, at(10, 14, 13), 0, () => 'log-bbbbbb');
+  assert.equal(by('todo-t1').done, true); assert.equal(C.nextTodoReminder(s, at(10, 20)), null);
+  assert.deepEqual(s.dayLog.map(e => [e.type, e.title, e.action, e.minutes]), [['todo', 'Timed', 'snooze', 10], ['todo', 'Timed', 'done', 0]]);
+  // changing the deadline re-arms the reminder
+  by('todo-d1').reminded = 1; C.setTodoDue(s, 'todo-d1', '2026-10-11'); assert.equal(by('todo-d1').reminded, null);
+  // feature off: no to-do reminders at all
+  s.features.todos = false; assert.equal(C.nextTodoReminder(s, at(12, 12)), null);
+  assert.equal(C.normalize({ todos: [{ text: 'a', remind: 'sometimes', reminded: 'x', snoozeUntil: {} }] }).todos[0].remind, null);
+});
+t('day log: every answer is recorded, edits are previewed and keep the numbers consistent', () => {
+  const s = C.normalize({}); const now = L(2026, 10, 10, 10, 0); s.date = C.todayStr(now); s.water.interval = 30; let n = 0; const id = () => 'log-' + String(++n).padStart(6, '0');
+  C.applyFinish(s, { type: 'water', action: 'skip', minutes: 30 }, now, 0, id);
+  C.applyFinish(s, { type: 'water', action: 'snooze', minutes: 5 }, now + 1000, 0, id);
+  s.count = 1; s.log = [now + 2000]; C.applyFinish(s, { type: 'water', action: 'done', minutes: 30 }, now + 2000, 0, id);
+  C.applyFinish(s, { type: 'water', action: 'skip', minutes: 30, preview: true }, now, 0, id);          // previews are not recorded
+  C.applyFinish(s, { type: 'hello' }, now, 0, id);                                                      // neither is the greeting
+  assert.deepEqual(s.dayLog.map(e => e.action), ['skip', 'snooze', 'done']); assert.deepEqual(s.today, { skips: 1, skipMin: 30, snoozes: 1, snoozeMin: 5 });
+  // preview says what would happen and changes nothing
+  let pv = C.previewLogEdit(s, 'log-000001', 'done'); assert.ok(pv.ok); assert.match(pv.message, /Skipped to Done/); assert.match(pv.detail, /Glasses today: 1 → 2/); assert.match(pv.detail, /Skipped check-ins: 1 → 0/);
+  assert.equal(s.count, 1); assert.equal(s.today.skips, 1);
+  assert.ok(!C.previewLogEdit(s, 'log-000001', 'skip').ok); assert.ok(!C.previewLogEdit(s, 'nope', 'done').ok); assert.ok(!C.previewLogEdit(s, 'log-000001', 'maybe').ok);
+  // skip -> done: one more glass, one skip fewer
+  assert.ok(C.editLogEntry(s, 'log-000001', 'done', now).ok); assert.equal(s.count, 2); assert.equal(s.log.length, 2); assert.deepEqual(s.today, { skips: 0, skipMin: 0, snoozes: 1, snoozeMin: 5 });
+  // done -> not yet: back to one glass, one more "not yet"
+  assert.ok(C.editLogEntry(s, 'log-000003', 'snooze', now).ok); assert.equal(s.count, 1); assert.deepEqual(s.today, { skips: 0, skipMin: 0, snoozes: 2, snoozeMin: 10 });
+  // deleting undoes it
+  assert.ok(C.editLogEntry(s, 'log-000002', 'delete', now).removed); assert.deepEqual(s.today, { skips: 0, skipMin: 0, snoozes: 1, snoozeMin: 5 }); assert.equal(s.dayLog.length, 2);
+  // counts never go negative
+  s.count = 0; s.log = []; assert.ok(C.editLogEntry(s, 'log-000001', 'skip', now).ok); assert.equal(s.count, 0);
+  // reminders and to-dos: the log changes; a to-do is also marked done or not done
+  C.addTodo(s, 'Call mum', now, 'todo-cm1'); s.reminders.push({ id: 'rem-aaaaaa', title: 'Stretch', kind: 'daily', at: '09:00', enabled: true, nextAt: now + 1, done: false });
+  C.applyFinish(s, { type: 'todo', id: 'todo-cm1', action: 'done' }, now, 0, id); C.applyFinish(s, { type: 'reminder', id: 'rem-aaaaaa', action: 'skip' }, now, 0, id);
+  const eTodo = s.dayLog.find(e => e.type === 'todo'), eRem = s.dayLog.find(e => e.type === 'reminder');
+  assert.match(C.previewLogEdit(s, eTodo.id, 'snooze').detail, /marked not done/); assert.match(C.previewLogEdit(s, eRem.id, 'done').detail, /Only the log changes/);
+  C.editLogEntry(s, eTodo.id, 'snooze', now); assert.equal(s.todos.find(x => x.id === 'todo-cm1').done, false);
+  C.editLogEntry(s, eTodo.id, 'done', now); assert.equal(s.todos.find(x => x.id === 'todo-cm1').done, true);
+  // a new day clears the log; saved logs are validated on load
+  assert.ok(C.rollover(s, L(2026, 10, 11, 9, 0))); assert.equal(s.dayLog.length, 0);
+  const back = C.normalize({ dayLog: [{ id: 'x', t: 'now', type: 'water', action: 'done' }, { t: 5, type: 'water', action: 'explode' }, { t: 5, type: 'water', action: 'done', title: '<b>x</b>' }, null, { id: 'dupdup', t: 6, type: 'todo', action: 'skip' }, { id: 'dupdup', t: 7, type: 'todo', action: 'skip' }] });
+  assert.equal(back.dayLog.length, 3); assert.ok(back.dayLog.every(e => e.id && e.id !== 'x')); assert.equal(new Set(back.dayLog.map(e => e.id)).size, 3); assert.ok(!/[<>]/.test(back.dayLog[0].title));
+  assert.equal(C.normalize({ dayLog: Array.from({ length: 900 }, (_, i) => ({ id: 'id' + String(i).padStart(6, '0'), t: i, type: 'water', action: 'done' })) }).dayLog.length, 300);
+});
+t('to-do list spot is validated', () => {
+  const s = C.normalize({}); assert.equal(s.behavior.todoSpot, null);
+  C.applyPatch(s, { behavior: { todoSpot: { x: 400.6, y: 300 } } }); assert.deepEqual(s.behavior.todoSpot, { x: 401, y: 300 });
+  assert.deepEqual(C.applyPatch(s, { behavior: { todoSpot: { x: 'a' } } }).rejected, ['behavior.todoSpot']); assert.deepEqual(s.behavior.todoSpot, { x: 401, y: 300 });
+  C.applyPatch(s, { behavior: { todoSpot: null } }); assert.equal(s.behavior.todoSpot, null);
 });
 const U = require('../src/main/uninstall.js');
 t('uninstall plan: Linux install, source folder and unsafe paths', () => {

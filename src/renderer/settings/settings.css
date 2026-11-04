@@ -173,3 +173,15 @@ a.btn[data-link]:hover { text-decoration: none; }
 details.card > summary { cursor: pointer; font-weight: 600; }
 .dueline input, .dueadd input { width: auto; min-width: 0; }
 .dueadd input { padding: 6px 8px; }
+
+/* ---- today's log ---- */
+.logs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.logs li { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.logs .lt { font-variant-numeric: tabular-nums; color: var(--muted); width: 46px; flex: none; }
+.logs .lk { width: 22px; text-align: center; flex: none; }
+.logs .lm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.logs select { width: auto; }
+.logs li.st-done { border-left: 4px solid var(--ok); }
+.logs li.st-skip { border-left: 4px solid var(--warn); }
+.logs li.st-snooze { border-left: 4px solid var(--accent); }
+.dueline select, .dueadd select { width: auto; font-size: 12.5px; padding: 3px 6px; }

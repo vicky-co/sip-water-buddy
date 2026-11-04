@@ -17,6 +17,10 @@
       <label for="due">Deadline (optional)</label>
       <input id="due" type="date">
       <input id="dueTime" type="time" aria-label="Deadline time (optional)" disabled>
+      <select id="remind" aria-label="Reminder for this deadline" title="Reminder" disabled>
+        <option value="">Default reminder</option><option value="off">No reminder</option><option value="0">At the deadline</option><option value="5">5 min before</option><option value="10">10 min before</option>
+        <option value="15">15 min before</option><option value="30">30 min before</option><option value="60">1 hour before</option><option value="120">2 hours before</option><option value="1440">1 day before</option>
+      </select>
     </div>
     <p id="msg" role="status" aria-live="polite"></p>
     <div class="row">

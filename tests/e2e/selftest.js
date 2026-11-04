@@ -1,7 +1,7 @@
 'use strict';
 // End-to-end check: launches the real app (main process, both windows, real preload scripts) and drives it.
 //   xvfb-run -a electron --no-sandbox --disable-gpu tests/e2e/selftest.js
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
 const Brand = require('../../src/main/branding.js');
 const opened = []; shell.openExternal = async u => { opened.push(u); };       // never open a real browser during the test
 const path = require('path'), fs = require('fs');
@@ -11,6 +11,8 @@ app.setPath('userData', DATA);
 const results = [], consoleMsgs = [];
 const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail !== undefined ? '  -> ' + JSON.stringify(detail) : '')); };
 app.on('web-contents-created', (_e, wc) => wc.on('console-message', ev => consoleMsgs.push({ level: ev.level, msg: String(ev.message).slice(0, 300) })));
+const dialogCalls = []; let dialogAnswer = 0;                                       // the test answers the confirmation dialogs: 0 = confirm, 1 = cancel
+dialog.showMessageBox = async (...a) => { dialogCalls.push(a[a.length - 1]); return { response: dialogAnswer }; };
 let trayMenu = [];                                                               // the tray menu as Sip last built it, so the test can click its items
 const buildMenu = Menu.buildFromTemplate.bind(Menu); Menu.buildFromTemplate = t => { trayMenu = t; return buildMenu(t); };
 require(path.join(__dirname, '..', '..', 'src', 'main', 'main.js'));
@@ -191,8 +193,10 @@ app.whenReady().then(async () => {
     await run(sw, "document.querySelector('#todoClear').click()"); await sleep(400);
     check('"Clear completed" removes finished ones only', await run(sw, "sipSettings.getState().then(s => s.todos.length === 1 && !s.todos[0].done)"));
     check('the tray shows how many are open', !!menuItem('Show todos (1 open)'), trayMenu.map(i => i.label));
-    menuItem('Show todos').click(); await sleep(500);
-    check('"Show todos" opens Settings on the To-dos tab', await run(sw, "document.querySelector('#tab-todos').getAttribute('aria-selected') === 'true' && !document.querySelector('#panel-todos').hidden"));
+    menuItem('Show todos').click();
+    check('"Show todos" puts the hero and pet on the desktop holding the list', await waitFor(() => run(overlay, "!document.getElementById('todoBox').hidden && document.querySelectorAll('#tdList li').length === 1 && document.body.classList.contains('todo-mode')"), 15000, 150) && overlay.isVisible());
+    await run(overlay, "document.getElementById('tdClose').click()");
+    check('Close puts them away again', await waitFor(() => !overlay.isVisible(), 8000, 100));
     await run(sw, "document.querySelector('#todoList li button').click()"); await sleep(400);
     check('the delete button removes an item', await run(sw, "sipSettings.getState().then(s => s.todos.length === 0)"));
     // switch it off
@@ -216,6 +220,7 @@ app.whenReady().then(async () => {
     check('...and on every tab, even a short one', await run(sw, "(async () => { for (const t of ['characters','reminders','todos','stats','sounds','general']) { document.querySelector('#tab-' + t).click(); await new Promise(r => setTimeout(r, 60)); if (Math.round(document.querySelector('.brandbar').getBoundingClientRect().bottom) !== innerHeight) return t; } return true; })()"));
     const ymdOf = (d, off = 0) => { const x = new Date(d); x.setDate(x.getDate() + off); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
     const today = ymdOf(Date.now()), yesterday = ymdOf(Date.now(), -1), nextWeek = ymdOf(Date.now(), 7);
+    await run(sw, "sipSettings.patch({ todoRemind: { enabled: false } })");                                  // the deadline tests below must not pop anything up
     await run(sw, "sipSettings.getState().then(s => Promise.all(s.todos.map(t => sipSettings.todoDelete(t.id))))");
     check('a to-do can be added without a deadline, with a date, or with a date and time', await run(sw, `(async () => { const a = await sipSettings.todoAdd('No deadline'), b = await sipSettings.todoAdd('Late one', '${yesterday}T09:00'), c = await sipSettings.todoAdd('Later', '${nextWeek}'); const t = c.view.todos; return a.ok && b.ok && c.ok && t.length === 3 && t[0].due === null && t[1].due === '${yesterday}T09:00' && t[2].due === '${nextWeek}'; })()`));
     check('an invalid deadline is refused and nothing is added', await run(sw, "(async () => { const r1 = await sipSettings.todoAdd('Bad', '2026-02-30'), r2 = await sipSettings.todoAdd('Bad', 'tomorrow'), r3 = await sipSettings.todoAdd('Bad', { x: 1 }); const v = await sipSettings.getState(); return !r1.ok && !r2.ok && !r3.ok && v.todos.length === 3; })()"));
@@ -265,6 +270,111 @@ app.whenReady().then(async () => {
     check('water window: ticking the box in the page turns it on', await run(sw, "sipSettings.getState().then(s => s.water.window.enabled === true)"));
     await shot(sw, 'settings-water-window');
     await run(sw, "sipSettings.patch({ water: { interval: 45, window: { enabled: false } } })");          // back to what the later checks expect
+    await run(sw, "document.querySelector('#tab-general').click()");
+
+    // ---- 2.3: to-do reminders, the day log, and the to-do list on the desktop ----
+    // another check-in (a custom reminder that fell due, a water ask) may be on screen: answer it so the character is free for what the test needs
+    const clearOverlay = async () => { for (let i = 0; i < 6 && overlay.isVisible(); i++) { await run(overlay, "(() => { const id = !document.getElementById('todoBox').hidden ? 'tdClose' : !document.getElementById('bActions').hidden && !document.getElementById('remBtns').hidden ? 'remSkip' : !document.getElementById('bActions').hidden && !document.getElementById('waterBtns').hidden ? 'skip' : !document.getElementById('bActions').hidden && !document.getElementById('helloBtns').hidden ? 'helloClose' : null; if (id) document.getElementById(id).click(); })()"); await waitFor(() => !overlay.isVisible(), 25000, 200); } };
+    const waitTodoReminder = name => waitFor(async () => {
+      const txt = await run(overlay, "document.getElementById('bText').textContent"), vis = overlay.isVisible();
+      if (vis && !txt.startsWith('To do: ' + name)) { await clearOverlay(); return false; }
+      return vis && await run(overlay, "!document.getElementById('remBtns').hidden");
+    }, 60000, 250);
+    await clearOverlay();
+    await run(sw, "sipSettings.getState().then(s => Promise.all(s.todos.map(t => sipSettings.todoDelete(t.id))))");
+    const hhmm = ms => { const d = new Date(ms); return ymdOf(ms) + 'T' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+    check('settings: global deadline reminder defaults and the per-to-do reminder choice exist', await run(sw, "sipSettings.getState().then(s => s.todoRemind.enabled === false && s.todoRemind.before === 30)") && await run(sw, "document.querySelectorAll('#todoRemBefore option').length >= 8 && !!document.getElementById('todoShowDesk') && !!document.getElementById('todoAddRemind')"));
+    await run(sw, "sipSettings.patch({ todoRemind: { enabled: true, before: 30 } })");
+    check('a bad global reminder value is refused', await run(sw, "sipSettings.patch({ todoRemind: { before: -5 } }).then(r => r.rejected.includes('todoRemind.before'))"));
+    const soon = Date.now() + 20 * 60000, soon2 = Date.now() + 5 * 60000;
+    const added = await run(sw, `(async () => { const q = await sipSettings.todoAdd('Quiet one', '${hhmm(soon2)}', 'off'); const r = await sipSettings.todoAdd('Pay the rent', '${hhmm(soon)}'); const bad = await sipSettings.todoAdd('Bad', '${hhmm(soon)}', 'often'); return { q: q.ok, r: r.ok, bad: bad.ok, todos: r.view.todos.map(t => [t.text, t.remind]) }; })()`);
+    check('adding a to-do with a reminder choice works and a bad choice is refused', added.q && added.r && !added.bad && JSON.stringify(added.todos) === JSON.stringify([['Quiet one', 'off'], ['Pay the rent', null]]), added);
+    // the default is 30 minutes before; the deadline is in 20, so the reminder is already due and the character brings it
+    check('a to-do reminder: the character appears with the to-do and its deadline', await waitTodoReminder('Pay the rent') && await run(overlay, "/Due/.test(document.getElementById('bNote').textContent)"));
+    await sleep(6000);
+    check('the to-do with "No reminder" was not reminded, and the other is not repeated', await run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Quiet one').reminded === null && s.todos.find(t => t.text === 'Pay the rent').reminded > 0)") && await run(overlay, "/^To do: Pay the rent/.test(document.getElementById('bText').textContent)"));
+    await run(overlay, "document.getElementById('remS10').click()");
+    check('+10 min snoozes the to-do reminder', await waitFor(() => !overlay.isVisible(), 20000, 200));
+    const sn = await run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Pay the rent'))");
+    check('...it is not marked done and the delay is recorded', !sn.done && sn.reminded > 0, sn);
+    // answering "Done" from the character marks the to-do done: simulate it coming due again
+    await run(sw, "sipSettings.patch({ todoRemind: { enabled: false } })");
+    await run(sw, `sipSettings.todoDue('${sn.id}', '${hhmm(Date.now() + 10 * 60000)}').then(() => sipSettings.todoRemind('${sn.id}', 15)).then(() => sipSettings.patch({ todoRemind: { enabled: true } }))`);
+    check('re-arming: a changed deadline brings the reminder back', await waitTodoReminder('Pay the rent'));
+    await run(overlay, "document.getElementById('remDone').click()");
+    check('Done on the reminder marks the to-do done (when the goodbye finishes)', await waitFor(() => run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Pay the rent').done === true)"), 30000, 200));
+    await waitFor(() => !overlay.isVisible(), 20000, 200);
+    check('the to-do answers are in today\'s log', await run(sw, "sipSettings.getState().then(s => { const l = s.dayLog.filter(e => e.type === 'todo' && e.title === 'Pay the rent').map(e => e.action); return l.join() === 'snooze,done'; })"));
+    // quick add carries the reminder choice
+    menuItem('Quick add todo').click(); const qw3 = await waitFor(() => win('Sip Quick Add'), 10000);
+    await run(qw3, `(() => { document.getElementById('text').value = 'Quick with reminder'; const d = document.getElementById('due'); d.value = '${nextWeek}'; d.dispatchEvent(new Event('input')); document.getElementById('remind').value = '60'; document.getElementById('form').requestSubmit(); })()`);
+    check('quick add takes a reminder choice too', await waitFor(() => run(sw, "sipSettings.getState().then(s => (s.todos.find(x => x.text === 'Quick with reminder') || {}).remind === 60)"), 8000, 100));
+    await waitFor(() => !win('Sip Quick Add'), 8000, 100);
+    // the reminder select in the list
+    await run(sw, "document.querySelector('#tab-todos').click()"); await sleep(400);
+    await run(sw, "(() => { const li = [...document.querySelectorAll('#todoList li')].find(x => x.textContent.includes('Quick with reminder')); const sel = li.querySelector('select'); sel.value = 'off'; sel.dispatchEvent(new Event('change', { bubbles: true })); })()"); await sleep(500);
+    check('the reminder of an existing to-do can be changed in the list', await run(sw, "sipSettings.getState().then(s => s.todos.find(x => x.text === 'Quick with reminder').remind === 'off')"));
+    await run(sw, "(() => { const sel = document.getElementById('todoRemBefore'); sel.value = '120'; sel.dispatchEvent(new Event('change', { bubbles: true })); })()"); await sleep(500);
+    check('the global "how long before" can be changed in the page', await run(sw, "sipSettings.getState().then(s => s.todoRemind.before === 120)"));
+    await run(sw, "sipSettings.patch({ todoRemind: { before: 30 } })");
+    await shot(sw, 'settings-todo-reminders');
+
+    // today's log: it lists what was answered, and an edit asks first
+    await run(sw, "document.querySelector('#tab-today').click()"); await sleep(500);
+    const lg = await run(sw, "sipSettings.getState().then(s => ({ n: s.dayLog.length, skips: s.today.skips, count: s.today.count, water: s.dayLog.filter(e => e.type === 'water').length, first: s.dayLog.find(e => e.type === 'water' && e.action === 'skip') }))");
+    check('Today tab: the page lists every answered check-in of the day', lg.n > 3 && await run(sw, `document.querySelectorAll('#logList li').length === ${lg.n} && document.querySelectorAll('#todayTiles .tile').length === 4`), lg);
+    check('Today tab: the earlier skipped water check-ins are in the list', !!lg.first && lg.skips >= 1, lg);
+    dialogCalls.length = 0; dialogAnswer = 1;                                                       // the person says Cancel
+    await run(sw, `(() => { const li = [...document.querySelectorAll('#logList li')].find(x => x.className.includes('st-skip') && x.textContent.includes('Water check-in')); const sel = li.querySelector('select'); sel.value = 'done'; sel.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(700);
+    check('an edit asks for confirmation first, and says what will change', dialogCalls.length === 1 && /Skipped to Done/.test(dialogCalls[0].message) && /Glasses today/.test(dialogCalls[0].detail) && dialogCalls[0].buttons.length === 2 && dialogCalls[0].defaultId === 1, dialogCalls.map(c => [c.message, c.detail]));
+    check('Cancel changes nothing, and the list shows the old answer again', await run(sw, `sipSettings.getState().then(s => s.today.skips === ${lg.skips} && s.today.count === ${lg.count})`) && await run(sw, "[...document.querySelectorAll('#logList li')].some(x => x.className.includes('st-skip') && x.querySelector('select').value === 'skip')"));
+    dialogAnswer = 0;                                                                              // now the person confirms
+    await run(sw, `(() => { const li = [...document.querySelectorAll('#logList li')].find(x => x.className.includes('st-skip') && x.textContent.includes('Water check-in')); const sel = li.querySelector('select'); sel.value = 'done'; sel.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(900);
+    check('Confirm updates the entry and the numbers: one more glass, one skip fewer', await run(sw, `sipSettings.getState().then(s => s.today.count === ${lg.count} + 1 && s.today.skips === ${lg.skips} - 1)`));
+    check('...and the Today tiles follow', await run(sw, `document.querySelector('#todayTiles .big').textContent.startsWith('${lg.count + 1} of')`));
+    dialogCalls.length = 0;
+    await run(sw, "document.querySelector('#logList li button').click()"); await sleep(900);
+    check('removing an entry asks first too, then removes it', dialogCalls.length === 1 && /Remove/.test(dialogCalls[0].message) && await run(sw, `sipSettings.getState().then(s => s.dayLog.length === ${lg.n} - 1)`), dialogCalls.map(c => c.message));
+    check('forged log edits are ignored', await run(sw, "sipSettings.logEdit({}, 'done').then(r => r.ok === false).then(a => sipSettings.logEdit('nope', 'explode').then(r => a && r.ok === false))"));
+    await shot(sw, 'settings-today');
+
+    // the to-do list on the desktop: they stand still holding the list, it can be ticked, and dragged anywhere
+    await clearOverlay();
+    await run(sw, "sipSettings.getState().then(s => Promise.all(s.todos.map(t => sipSettings.todoDelete(t.id))))");
+    await run(sw, `sipSettings.patch({ todoRemind: { enabled: false } }).then(() => Promise.all([sipSettings.todoAdd('Book dentist', '${nextWeek}'), sipSettings.todoAdd('Buy a gift'), sipSettings.todoAdd('Call the bank', '${yesterday}T09:00')]))`);
+    menuItem('Show todos').click();
+    check('the list on the desktop shows every to-do, soonest deadline first', await waitFor(() => run(overlay, "[...document.querySelectorAll('#tdList li label span:first-child')].map(x => x.textContent).join('|') === 'Call the bank|Book dentist|Buy a gift'"), 15000, 150));
+    check('an overdue to-do is marked in red', await run(overlay, "document.querySelector('#tdList li').classList.contains('late') && /^Overdue/.test(document.querySelector('#tdList li .due').textContent)"));
+    const d0 = overlay.getBounds(); await sleep(2500); const d1 = overlay.getBounds();
+    check('the hero and pet do not move while the list is shown', d0.x === d1.x && d0.y === d1.y, [d0, d1]);
+    await run(overlay, "document.querySelector('#tdList li input').click()");
+    check('ticking an item on the desktop marks it done', await waitFor(() => run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Call the bank').done === true)"), 8000, 100));
+    await run(sw, "sipSettings.todoAdd('Added from Settings')");
+    check('the desktop list follows changes made elsewhere', await waitFor(() => run(overlay, "[...document.querySelectorAll('#tdList li label span:first-child')].some(x => x.textContent === 'Added from Settings')"), 8000, 100));
+    check('the desktop list says how many are open', await run(overlay, "document.getElementById('tdTitle').textContent.includes('(3 open)')"));
+    // drag them: press on the hero, move, release
+    const b0 = overlay.getBounds();
+    await run(overlay, `(() => { const f = document.getElementById('fig'), r = f.getBoundingClientRect(); const ev = (t, x, y) => new MouseEvent(t, { bubbles: true, clientX: x, clientY: y, screenX: x + ${b0.x}, screenY: y + ${b0.y}, button: 0 }); f.dispatchEvent(ev('mousedown', r.left + 40, r.top + 80)); window.dispatchEvent(ev('mousemove', r.left - 160, r.top - 60)); window.dispatchEvent(ev('mouseup', r.left - 160, r.top - 60)); })()`);
+    await sleep(1200); const b1 = overlay.getBounds();
+    check('dragging the hero moves the whole thing', Math.abs((b1.x - b0.x) + 200) <= 3 && Math.abs((b1.y - b0.y) + 140) <= 3, [b0, b1]);
+    const todoSpot = await waitFor(() => run(sw, "sipSettings.getState().then(s => s.behavior.todoSpot)"), 5000, 100);
+    check('where it was dropped is remembered', !!todoSpot && Math.abs(todoSpot.x - (b1.x + 150)) <= 2 && Math.abs(todoSpot.y - (b1.y + 405)) <= 2, todoSpot);
+    await run(overlay, "document.getElementById('tdClose').click()"); await waitFor(() => !overlay.isVisible(), 8000, 100);
+    menuItem('Show todos').click();
+    check('next time the list opens where it was left', await waitFor(() => { const b = overlay.getBounds(); return overlay.isVisible() && Math.abs(b.x - b1.x) <= 3 && Math.abs(b.y - b1.y) <= 3; }, 15000, 150));
+    // a drag that starts on the dog works too, and the grip above the list as well
+    const b2 = overlay.getBounds();
+    await run(overlay, `(() => { const g = document.getElementById('tdGrip'), r = g.getBoundingClientRect(); const ev = (t, x, y) => new MouseEvent(t, { bubbles: true, clientX: x, clientY: y, screenX: x + ${b2.x}, screenY: y + ${b2.y}, button: 0 }); g.dispatchEvent(ev('mousedown', r.left + 10, r.top + 5)); window.dispatchEvent(ev('mousemove', r.left + 60, r.top + 25)); window.dispatchEvent(ev('mouseup', r.left + 60, r.top + 25)); })()`);
+    await sleep(900); const b3 = overlay.getBounds();
+    check('the strip above the list drags it too', Math.abs((b3.x - b2.x) - 50) <= 3 && Math.abs((b3.y - b2.y) - 20) <= 3, [b2, b3]);
+    check('while the list is open, clicking the hero does not make him do tricks', await run(overlay, "(() => { document.getElementById('fig').click(); return document.body.classList.contains('todo-mode') && !document.getElementById('todoBox').hidden; })()"));
+    await run(overlay, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))");
+    check('Esc closes the list', await waitFor(() => !overlay.isVisible(), 8000, 100));
+    await sleep(500);
+    await run(sw, "sipSettings.showTodos()"); check('Settings has a button that shows the list on the desktop', await waitFor(() => overlay.isVisible(), 10000, 150));
+    await shot(overlay, 'overlay-todos');
+    await run(overlay, "document.getElementById('tdClose').click()"); await waitFor(() => !overlay.isVisible(), 8000, 100);
+    await run(sw, "sipSettings.patch({ todoRemind: { enabled: true, before: 30 } })");
     await run(sw, "document.querySelector('#tab-general').click()");
 
     // ---- credit and links ----

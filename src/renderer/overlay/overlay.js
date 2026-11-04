@@ -691,12 +691,13 @@
     b.title = B.parked ? 'Go back to wandering around the screen' : 'Wait at the spot you chose every time';
   }
   function showAsk(){
-    $('#waterBtns').hidden = askMode !== 'water'; $('#remBtns').hidden = askMode !== 'reminder'; $('#helloBtns').hidden = askMode !== 'hello';
+    $('#todoBox').hidden = true;
+    $('#waterBtns').hidden = askMode !== 'water'; $('#remBtns').hidden = askMode !== 'reminder' && askMode !== 'todo'; $('#helloBtns').hidden = askMode !== 'hello';
     bNote.hidden = true; bText.hidden = false; goRow.hidden = true; asking = true; leaving = false; updateParkBtn();
     if (askMode === 'water') bText.textContent = count === 0 ? 'Boss, first glass of water today. Done?' : 'Water break, boss. Had a glass?';
-    else if (askMode === 'reminder'){
-      bText.textContent = askItem.title;
-      const note = [askItem.note, askItem.late ? 'This was due earlier.' : ''].filter(Boolean).join(' ');
+    else if (askMode === 'reminder' || askMode === 'todo'){
+      bText.textContent = askMode === 'todo' ? 'To do: ' + askItem.title : askItem.title;
+      const note = [askItem.note, askItem.late && askMode === 'reminder' ? 'This was due earlier.' : ''].filter(Boolean).join(' ');
       if (note){ bNote.textContent = note; bNote.hidden = false; }
     } else bText.textContent = "Hi! I'm " + lead() + ". I'll pop up whenever a reminder is due.";
     if (!showAsk.said){ showAsk.said = true; Sound.chime(); setTimeout(() => { if (heroOn) Sound.babble(bText.textContent); else Sound.bark(1); }, 450); }
@@ -775,7 +776,15 @@
     armedPt = null;
     asking = false; leaving = false; pendingAsk = false; waitedHere = !!d.parked; bText.hidden = false; goRow.hidden = true; hideAt = 0;
     askItem = d.item || { type: 'water' };
-    askMode = askItem.type === 'reminder' ? 'reminder' : askItem.type === 'hello' ? 'hello' : 'water';
+    askMode = askItem.type === 'reminder' ? 'reminder' : askItem.type === 'todo' ? 'todo' : askItem.type === 'hello' ? 'hello' : 'water';
+    todoMode = d.kind === 'todos'; drag = null; document.body.classList.toggle('todo-mode', todoMode); $('#todoBox').hidden = true;
+    if (todoMode){                                   // the to-do list: they just stand there holding it, and it can be dragged anywhere
+      for (const id of ['waterBtns', 'remBtns', 'helloBtns', 'bActions']) $('#' + id).hidden = true;
+      bText.hidden = true; bNote.hidden = true; asking = false; leaving = false; pendingAsk = false;
+      renderTodoList(askItem.todos || []); $('#todoBox').hidden = false; bubble.hidden = false;
+      run([...ARRIVE, {stay:true}]);
+      return;
+    }
     // The question shows the moment they land and follows them while they walk; answering is possible straight away.
     if (d.kind === 'intro' && askMode === 'water'){
       pendingAsk = true;
@@ -832,7 +841,7 @@
       normal:[{say:msg, ms:4500}, {pose:'collar',dur:1.6}, {walk:anyT}, {pose:'spin',dur:1.2}] });
   });
   // reminders (anything other than water)
-  const remInfo = (action, minutes) => ({ type:'reminder', id: askItem.id, action, minutes, preview: !!askItem.preview });
+  const remInfo = (action, minutes) => ({ type: askMode === 'todo' ? 'todo' : 'reminder', id: askItem.id, action, minutes, preview: !!askItem.preview });
   $('#remDone').addEventListener('click', () => {
     if (!atAsk()) return; bActions.hidden = true; Sound.cheer();
     farewell({ say:'Nice work!', react:'point', info:remInfo('done'),
@@ -868,10 +877,12 @@
 
   $('#tricksBtn').addEventListener('click', () => { const tr = $('#tricks'); tr.hidden = !tr.hidden; renderNames(); });
   $('#fig').addEventListener('click', () => {
+    if (todoMode) return;
     if (step && step.walk && steps.some(s => s.ask)){ steps = steps.filter(s => s.ask); next(); return; }
     if (atAsk() && !flair) randomFlair();
   });
   dogEl.addEventListener('click', () => {
+    if (todoMode) return;
     if (activity || D.barkT > 0) return;
     D.barkT = 0.6; fx('Woof!', dogHeadX(), 62); Sound.bark(2);
   });
@@ -886,6 +897,48 @@
     });
     return { reset(){ ignoring = false; api.setClickThrough(false); } };
   })() : null;
+
+  // ================= The to-do list on the desktop =================
+  let todoMode = false, drag = null;
+  const tdList = $('#tdList');
+  function dueText(t){
+    if (!t.due) return '';
+    const hasT = t.due.length > 10, d = new Date(+t.due.slice(0, 4), +t.due.slice(5, 7) - 1, +t.due.slice(8, 10), hasT ? +t.due.slice(11, 13) : 0, hasT ? +t.due.slice(14, 16) : 0);
+    return (t.overdue && !t.done ? 'Overdue: ' : 'Due ') + d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) + (hasT ? ' at ' + t.due.slice(11) : '');
+  }
+  function renderTodoList(list){
+    const open = list.filter(t => !t.done).length;
+    $('#tdTitle').textContent = open ? `Your to-dos (${open} open)` : 'Your to-dos';
+    $('#tdEmpty').hidden = list.some(t => !t.done);
+    tdList.replaceChildren(...list.map(t => {
+      const li = document.createElement('li'), box = document.createElement('input'), lab = document.createElement('label'), txt = document.createElement('span');
+      li.className = (t.done ? 'done ' : '') + (t.overdue && !t.done ? 'late' : '');
+      box.type = 'checkbox'; box.checked = !!t.done; box.id = 'td-' + t.id; box.setAttribute('aria-label', t.text);
+      box.addEventListener('change', () => api.todoSet(t.id, box.checked).then(renderTodoList).catch(() => {}));
+      lab.htmlFor = box.id; txt.textContent = t.text; lab.append(txt);
+      const due = dueText(t); if (due){ const dd = document.createElement('span'); dd.className = 'due'; dd.textContent = due; lab.append(dd); }
+      li.append(box, lab); return li;
+    }));
+  }
+  if (api.onTodos) api.onTodos(list => { if (todoMode) renderTodoList(list); });
+  const closeTodos = () => { if (!todoMode) return; todoMode = false; document.body.classList.remove('todo-mode'); api.done({ type:'todos' }); };
+  $('#tdClose').addEventListener('click', closeTodos);
+  $('#tdManage').addEventListener('click', () => { if (api.openSettings) api.openSettings(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && todoMode) closeTodos(); });
+  // Drag them (the characters, or the strip above the list) anywhere on any screen; where they are put is remembered
+  function startDrag(e){ if (!todoMode || e.button !== 0) return; drag = { sx: e.screenX, sy: e.screenY, px: pos.x, py: pos.y }; e.preventDefault(); }
+  for (const el of [$('#fig'), dogEl, $('#tdGrip')]) el.addEventListener('mousedown', startDrag);
+  addEventListener('mousemove', e => {
+    if (!drag) return;
+    const U = union();
+    pos.x = clamp(drag.px + e.screenX - drag.sx, U.x - 40, U.x + U.width - WIN_W + 40);
+    pos.y = clamp(drag.py + e.screenY - drag.sy, U.y, U.y + U.height - WIN_H + 30);
+  });
+  function endDrag(){
+    if (!drag) return; const moved = Math.abs(pos.x - drag.px) + Math.abs(pos.y - drag.py) > 2; drag = null;
+    if (moved && api.setSetting) api.setSetting({ behavior: { todoSpot: { x: Math.round(pos.x + HX), y: Math.round(pos.y + WIN_H - GROUND) } } });
+  }
+  addEventListener('mouseup', endDrag); addEventListener('blur', endDrag);
 
   // ================= Hovering: stop while the mouse is over them =================
   let cursor = null, cursorAt = 0, origin = null, armedPt = null;   // armedPt: where the mouse was when they were answered; resting there (on the button just clicked) does not count as hovering
@@ -945,6 +998,8 @@
           if (askT > 9) randomFlair();
         }
         if (!activity && !aiming){ const sp = dogSoloTick(dt); if (sp) dogPose = sp; }
+      } else if (step.stay){
+        pose = idle(clock);                                                              // holding the list: no walking, no tricks
       } else if (step.fade !== undefined){
         stage.style.opacity = Math.max(0, 1 - stepT/0.5);
         if (stepT >= 0.5){ const info = step.info || { type:'water', minutes: step.fade }; step = null; bubble.hidden = true; api.done(info); }

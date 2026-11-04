@@ -86,7 +86,7 @@
   // ---------- Render ----------
   function render() {
     if (!V) return;
-    renderCharacters(); renderReminders(); renderSounds(); renderGeneral(); renderTodos(); renderStats();
+    renderCharacters(); renderReminders(); renderSounds(); renderGeneral(); renderTodos(); renderToday(); renderStats();
     $('#sideFoot').textContent = 'Version ' + V.version;
     renderAbout();
   }
@@ -124,12 +124,47 @@
     $('#diagHero').textContent = V.diag.hero; $('#diagPet').textContent = V.diag.pet;
     $('#diagVer').textContent = `Sip ${V.version} · Electron ${V.electron} · ${V.platform}`;
   }
+  // ---------- Today (answered check-ins, editable) ----------
+  const KIND_ICON = { water: '\u{1F4A7}', reminder: '⏰', todo: '✅' };
+  const ACTIONS = [['done', 'Done'], ['skip', 'Skipped'], ['snooze', 'Not yet']];
+  function renderToday() {
+    const T = V.today, log = V.dayLog;
+    if (!changed('today', [T, log])) return;
+    const tile = (big, lbl) => el('div', { class: 'tile' }, el('div', { class: 'big', text: big }), el('div', { class: 'lbl', text: lbl }));
+    $('#todayTiles').replaceChildren(tile(`${T.count} of ${T.goal}`, 'glasses today'), tile(String(T.skips), `skipped (${T.skipMin ? T.skipMin + ' min' : 'no time lost'})`),
+      tile(String(T.snoozes), '“Not yet” taps'), tile(String(log.length), 'check-ins answered'));
+    $('#logEmpty').hidden = log.length > 0;
+    $('#logList').replaceChildren(...[...log].reverse().map(e => {
+      const sel = el('select', { 'aria-label': 'Answer for ' + e.title, onchange: ev => logEdit(e.id, ev.target.value) }, ...ACTIONS.map(a => el('option', { value: a[0], text: a[1] })));
+      sel.value = e.action;
+      const label = e.type === 'water' ? 'Water check-in' : e.type === 'todo' ? 'To do: ' + e.title : e.title;
+      return el('li', { class: 'st-' + e.action },
+        el('span', { class: 'lt', text: new Date(e.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) }),
+        el('span', { class: 'lk', 'aria-hidden': 'true', text: KIND_ICON[e.type] || '' }),
+        el('span', { class: 'lm', text: label + (e.action === 'snooze' && e.minutes ? ` (asked again in ${e.minutes} min)` : '') }),
+        sel,
+        el('button', { type: 'button', class: 'btn small', title: 'Remove from today’s list', 'aria-label': 'Remove: ' + label, text: '✕', onclick: () => logEdit(e.id, 'delete') }));
+    }));
+  }
+  // Main asks "Are you sure?" in a native dialog before anything changes; on Cancel the list is simply redrawn as it was.
+  async function logEdit(id, action) {
+    try {
+      const r = await api.logEdit(id, action);
+      if (r && r.view) V = r.view;
+      if (r && r.ok) toast(action === 'delete' ? 'Removed.' : 'Updated.');
+      else if (r && !r.cancelled) toast(r.error || 'Could not change that.', true);
+    } catch (e) { toast('Could not change that.', true); }
+    sigs.today = null; render();
+  }
+
   // ---------- To-dos ----------
   function renderTodos() {
     const on = !!(V.features && V.features.todos);
     $('#tab-todos').hidden = !on;
     if (!on && !$('#panel-todos').hidden) showTab('general');
     $('#todosOn').checked = on;
+    $('#todoRemOn').checked = !!V.todoRemind.enabled; fillRemind($('#todoRemBefore'), false, String(V.todoRemind.before)); $('#todoRemBefore').disabled = !V.todoRemind.enabled;
+    fillRemind($('#todoAddRemind'), true, $('#todoAddRemind').value || '');
     // open items: soonest deadline first, then the ones without a deadline in the order they were added
     const open = V.todos.filter(t => !t.done).sort((a, b) => (a.dueAt == null) - (b.dueAt == null) || (a.dueAt - b.dueAt) || a.createdAt - b.createdAt), done = V.todos.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
     const late = open.filter(t => t.overdue).length;
@@ -141,15 +176,27 @@
       const save = () => { const d = dateIn.value; todoDue(t.id, d ? d + (timeIn.value ? 'T' + timeIn.value : '') : ''); };
       const dateIn = el('input', { type: 'date', value: date, 'aria-label': 'Deadline date for ' + t.text, onchange: save });
       const timeIn = el('input', { type: 'time', value: time, 'aria-label': 'Deadline time for ' + t.text, disabled: !date, onchange: save });
+      const remSel = el('select', { 'aria-label': 'Reminder for ' + t.text, title: 'Reminder before the deadline', disabled: !date || t.done, onchange: e => todoRemind(t.id, e.target.value) });
+      fillRemind(remSel, true, t.remind === null ? '' : String(t.remind));
       return el('li', { class: (t.done ? 'done ' : '') + (t.overdue ? 'late' : '') },
         el('div', { class: 'todoline' },
           el('label', {}, el('input', { type: 'checkbox', checked: t.done, onchange: e => todoDone(t.id, e.target.checked) }), el('span', { text: t.text })),
           el('button', { type: 'button', class: 'btn small', title: 'Delete', 'aria-label': 'Delete: ' + t.text, text: '✕', onclick: () => todoDelete(t.id) })),
-        el('div', { class: 'dueline' }, el('span', { text: 'Deadline' }), dateIn, timeIn, badge));
+        el('div', { class: 'dueline' }, el('span', { text: 'Deadline' }), dateIn, timeIn, el('span', { text: 'Remind' }), remSel, badge));
     }));
   }
   async function todoCall(fn) { try { const r = await fn(); if (r && r.view) { V = r.view; render(); } return r; } catch (e) { toast('Could not change the to-do list.', true); return null; } }
   const todoDone = (id, done) => todoCall(() => api.todoDone(id, done));
+  // choices for "remind me before the deadline"; the value is '' (use the global setting), 'off', or minutes
+  const REMIND = [['0', 'At the deadline'], ['5', '5 minutes before'], ['10', '10 minutes before'], ['15', '15 minutes before'], ['30', '30 minutes before'], ['60', '1 hour before'], ['120', '2 hours before'], ['1440', '1 day before']];
+  function fillRemind(sel, perTodo, value) {
+    const opts = [...(perTodo ? [['', 'Default'], ['off', 'No reminder']] : []), ...REMIND];
+    if (value && !opts.some(o => o[0] === value)) opts.push([value, `${value} minutes before`]);
+    const sig = JSON.stringify(opts); if (sel.dataset.sig !== sig) { sel.replaceChildren(...opts.map(o => el('option', { value: o[0], text: o[1] }))); sel.dataset.sig = sig; }
+    if (document.activeElement !== sel) sel.value = value;
+  }
+  const remindVal = v => v === '' ? null : v === 'off' ? 'off' : Number(v);
+  async function todoRemind(id, v) { const r = await todoCall(() => api.todoRemind(id, remindVal(v))); if (r && !r.ok) toast(r.error || 'Pick a valid reminder time.', true); }
   async function todoDue(id, due) { const r = await todoCall(() => api.todoDue(id, due)); if (r && !r.ok) toast(r.error || 'Pick a valid deadline.', true); }
   // "Overdue", "Due today", "Due tomorrow", "Due in 3 days", with the time when one was set
   function dueBadge(t) {
@@ -361,14 +408,14 @@
   $('#vol').addEventListener('input', e => { $('#volOut').textContent = e.target.value; sendVol(Number(e.target.value)); });
 
   $('#todosOn').addEventListener('change', e => patch({ features: { todos: e.target.checked } }));
-  const syncDueAdd = () => { const has = !!$('#todoDue').value; $('#todoDueTime').disabled = !has; $('#todoDueClear').hidden = !has; if (!has) $('#todoDueTime').value = ''; };
+  const syncDueAdd = () => { const has = !!$('#todoDue').value; $('#todoDueTime').disabled = !has; $('#todoAddRemind').disabled = !has; if (!has) $('#todoAddRemind').value = ''; $('#todoDueClear').hidden = !has; if (!has) $('#todoDueTime').value = ''; };
   $('#todoDue').addEventListener('input', syncDueAdd);
   $('#todoDueClear').addEventListener('click', () => { $('#todoDue').value = ''; syncDueAdd(); });
   $('#todoForm').addEventListener('submit', async e => {
     e.preventDefault(); const input = $('#todoText'), text = input.value.trim(), err = $('#todoErr');
     if (!text) { err.textContent = 'Type what you need to do.'; err.hidden = false; input.focus(); return; }
     const d = $('#todoDue').value, due = d ? d + ($('#todoDueTime').value ? 'T' + $('#todoDueTime').value : '') : '';
-    const r = await todoCall(() => api.todoAdd(text, due));
+    const r = await todoCall(() => api.todoAdd(text, due, due ? remindVal($('#todoAddRemind').value) : null));
     if (r && r.ok) { input.value = ''; $('#todoDue').value = ''; syncDueAdd(); err.hidden = true; } else if (r) { err.textContent = r.error || 'Could not add that.'; err.hidden = false; }
     input.focus();
   });
@@ -376,6 +423,9 @@
   $('#winOn').addEventListener('change', winPatch('enabled', $('#winOn')));
   $('#winStart').addEventListener('change', e => { if (e.target.value) { e.target.blur(); winPatch('start', e.target)(); } });
   $('#winEnd').addEventListener('change', e => { if (e.target.value) { e.target.blur(); winPatch('end', e.target)(); } });
+  $('#todoRemOn').addEventListener('change', e => patch({ todoRemind: { enabled: e.target.checked } }));
+  $('#todoRemBefore').addEventListener('change', e => patch({ todoRemind: { before: Number(e.target.value) } }));
+  $('#todoShowDesk').addEventListener('click', async () => { const r = await api.showTodos(); if (r && !r.ok) toast('A check-in is on screen right now. Try again after answering it.', true); });
   $('#todoClear').addEventListener('click', async () => { const r = await todoCall(() => api.todoClearDone()); if (r) toast(r.cleared ? `Cleared ${r.cleared} completed.` : 'Nothing to clear.'); });
   $('#startAtLogin').addEventListener('change', e => patch({ startAtLogin: e.target.checked }));
   for (const r of $$('input[name="leave"]')) r.addEventListener('change', () => { if (r.checked) patch({ behavior: { leave: r.value } }); });
