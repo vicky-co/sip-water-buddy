@@ -57,7 +57,7 @@
   }
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('[role="tab"]'); if (b) showTab(b.dataset.tab); });
   $('#tabs').addEventListener('keydown', e => {
-    const tabs = $$('[role="tab"]'), i = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true');
+    const tabs = $$('[role="tab"]').filter(t => !t.hidden), i = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true');
     const move = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
     if (move) { e.preventDefault(); showTab(tabs[(i + move + tabs.length) % tabs.length].dataset.tab, true); }
   });
@@ -85,7 +85,7 @@
   // ---------- Render ----------
   function render() {
     if (!V) return;
-    renderCharacters(); renderReminders(); renderSounds(); renderGeneral();
+    renderCharacters(); renderReminders(); renderSounds(); renderGeneral(); renderTodos(); renderStats();
     $('#sideFoot').textContent = 'Version ' + V.version;
     renderAbout();
   }
@@ -123,6 +123,73 @@
     $('#diagHero').textContent = V.diag.hero; $('#diagPet').textContent = V.diag.pet;
     $('#diagVer').textContent = `Sip ${V.version} · Electron ${V.electron} · ${V.platform}`;
   }
+  // ---------- To-dos ----------
+  function renderTodos() {
+    const on = !!(V.features && V.features.todos);
+    $('#tab-todos').hidden = !on;
+    if (!on && !$('#panel-todos').hidden) showTab('general');
+    $('#todosOn').checked = on;
+    const open = V.todos.filter(t => !t.done).sort((a, b) => a.createdAt - b.createdAt), done = V.todos.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+    $('#todoCount').textContent = open.length ? `To do (${open.length})` : 'To do';
+    $('#todoEmpty').hidden = V.todos.length > 0; $('#todoClear').hidden = done.length === 0;
+    if (!changed('todos', V.todos)) return;
+    $('#todoList').replaceChildren(...[...open, ...done].map(t => el('li', { class: t.done ? 'done' : '' },
+      el('label', {}, el('input', { type: 'checkbox', checked: t.done, onchange: e => todoDone(t.id, e.target.checked) }), el('span', { text: t.text })),
+      el('button', { type: 'button', class: 'btn small', title: 'Delete', 'aria-label': 'Delete: ' + t.text, text: '✕', onclick: () => todoDelete(t.id) }))));
+  }
+  async function todoCall(fn) { try { const r = await fn(); if (r && r.view) { V = r.view; render(); } return r; } catch (e) { toast('Could not change the to-do list.', true); return null; } }
+  const todoDone = (id, done) => todoCall(() => api.todoDone(id, done));
+  const todoDelete = id => todoCall(() => api.todoDelete(id));
+
+  // ---------- Stats (last 30 days) ----------
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = (tag, attrs = {}, ...kids) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) if (v != null && v !== false) n.setAttribute(k, String(v));
+    for (const c of kids.flat()) if (c != null) n.append(c.nodeType ? c : document.createTextNode(String(c)));
+    return n;
+  };
+  const fmtMin = m => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60 ? (m % 60) + ' min' : ''}`.trim();
+  const fmtDay = d => new Date(d + 'T12:00:00').toLocaleDateString([], { day: 'numeric', month: 'short' });
+  const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n);
+  function niceStep(raw) { const e = Math.pow(10, Math.floor(Math.log10(raw || 1))), f = raw / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; }
+  // One bar per day. opts: value(d), cls(d), text(d) for the hover/screen-reader title, goal(d) for the dashed line.
+  function barChart(host, days, opts) {
+    const W = 840, H = opts.height || 220, ml = 38, mr = 8, mt = 10, mb = 24, n = days.length;
+    const vals = days.filter(d => d.has).map(opts.value), goals = opts.goal ? days.filter(d => d.has).map(opts.goal) : [];
+    const lo = Math.min(0, ...vals), hi = Math.max(opts.minTop || 1, ...vals, ...goals);
+    const step = niceStep((hi - lo) / 4), top = Math.ceil(hi / step) * step, bot = Math.floor(lo / step) * step;
+    const y = v => mt + (H - mt - mb) * (1 - (v - bot) / (top - bot || 1)), slot = (W - ml - mr) / n, bw = Math.max(3, slot * 0.66);
+    const g = svg('g');
+    for (let v = bot; v <= top + 1e-9; v += step) g.append(svg('line', { class: v === 0 ? 'zero' : 'grid', x1: ml, x2: W - mr, y1: y(v), y2: y(v) }), svg('text', { class: 'axis', x: ml - 6, y: y(v) + 4, 'text-anchor': 'end' }, Math.round(v * 10) / 10));
+    days.forEach((d, i) => {
+      const x = ml + slot * i + (slot - bw) / 2;
+      if (i % 5 === n % 5 || i === n - 1) g.append(svg('text', { class: 'axis', x: x + bw / 2, y: H - 6, 'text-anchor': 'middle' }, fmtDay(d.d)));
+      if (!d.has) { g.append(svg('rect', { class: 'nodata', x, y: y(0) - 1.5, width: bw, height: 3 }, svg('title', {}, `${fmtDay(d.d)}: no data`))); return; }
+      const v = opts.value(d), y0 = y(0), y1 = y(v);
+      g.append(svg('rect', { class: opts.cls(d), x, y: Math.min(y0, y1), width: bw, height: Math.max(1.5, Math.abs(y0 - y1)), rx: 2 }, svg('title', {}, `${fmtDay(d.d)}: ${opts.text(d)}`)));
+    });
+    if (opts.goal) { const pts = days.map((d, i) => d.has ? `${(ml + slot * i + slot / 2).toFixed(1)},${y(opts.goal(d)).toFixed(1)}` : null).filter(Boolean); if (pts.length) g.append(svg('polyline', { class: 'goal', points: pts.join(' ') })); }
+    host.replaceChildren(svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': opts.label, preserveAspectRatio: 'xMidYMid meet' }, g));
+  }
+  function renderStats() {
+    const S = V.stats; if (!S || !changed('stats', S)) return;
+    const T = S.totals, tile = (big, lbl) => el('div', { class: 'tile' }, el('div', { class: 'big', text: big }), el('div', { class: 'lbl', text: lbl }));
+    $('#statTiles').replaceChildren(
+      tile(T.trackedDays ? String(T.avgPerDay) : '—', 'glasses a day on average'),
+      tile(`${T.goalDays} of ${T.trackedDays}`, 'days you reached your goal'),
+      tile(T.trackedDays ? signed(T.avgDeviation) : '—', 'average deviation from goal (glasses)'),
+      tile(String(T.skips), 'check-ins skipped'),
+      tile(fmtMin(T.skipMin), 'skipped time'),
+      tile(String(T.snoozes), `“Not yet” taps (${fmtMin(T.snoozeMin)})`));
+    barChart($('#chartGlasses'), S.days, { value: d => d.n, goal: d => d.goal, cls: d => d.n >= d.goal ? 'bar-ok' : 'bar-low', text: d => `${d.n} of ${d.goal} glasses`, label: 'Glasses per day for the last 30 days, with your goal', minTop: 4 });
+    barChart($('#chartDev'), S.days, { value: d => d.deviation, cls: d => d.deviation >= 0 ? 'bar-ok' : 'bar-bad', text: d => `${signed(d.deviation)} glasses against a goal of ${d.goal}`, label: 'Deviation from your goal for the last 30 days', height: 180, minTop: 2 });
+    barChart($('#chartSkip'), S.days, { value: d => d.skipMin, cls: () => 'bar-warn', text: d => `${d.skips} skipped, ${fmtMin(d.skipMin)}`, label: 'Skipped time per day for the last 30 days', height: 160, minTop: 10 });
+    $('#statTable tbody').replaceChildren(...[...S.days].reverse().map(d => d.has
+      ? el('tr', {}, el('th', { scope: 'row', text: fmtDay(d.d) }), el('td', { text: d.n }), el('td', { text: d.goal }), el('td', { text: signed(d.deviation) }), el('td', { text: d.skips }), el('td', { text: d.skipMin ? fmtMin(d.skipMin) : '—' }), el('td', { text: d.snoozes }))
+      : el('tr', { class: 'empty' }, el('th', { scope: 'row', text: fmtDay(d.d) }), el('td', { colspan: 6, text: 'no data' }))));
+  }
+
   function renderReminders() {
     const w = V.water;
     $('#waterOn').checked = w.enabled; $('#waterCard').classList.toggle('off', !w.enabled);
@@ -257,6 +324,15 @@
   const sendVol = debounce(v => patch({ sound: { volume: v / 100 } }), 200);
   $('#vol').addEventListener('input', e => { $('#volOut').textContent = e.target.value; sendVol(Number(e.target.value)); });
 
+  $('#todosOn').addEventListener('change', e => patch({ features: { todos: e.target.checked } }));
+  $('#todoForm').addEventListener('submit', async e => {
+    e.preventDefault(); const input = $('#todoText'), text = input.value.trim(), err = $('#todoErr');
+    if (!text) { err.textContent = 'Type what you need to do.'; err.hidden = false; input.focus(); return; }
+    const r = await todoCall(() => api.todoAdd(text));
+    if (r && r.ok) { input.value = ''; err.hidden = true; } else if (r) { err.textContent = r.error || 'Could not add that.'; err.hidden = false; }
+    input.focus();
+  });
+  $('#todoClear').addEventListener('click', async () => { const r = await todoCall(() => api.todoClearDone()); if (r) toast(r.cleared ? `Cleared ${r.cleared} completed.` : 'Nothing to clear.'); });
   $('#startAtLogin').addEventListener('change', e => patch({ startAtLogin: e.target.checked }));
   for (const r of $$('input[name="leave"]')) r.addEventListener('change', () => { if (r.checked) patch({ behavior: { leave: r.value } }); });
   $('#leaveSecs').addEventListener('input', debounce(e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 1) patch({ behavior: { leaveSecs: n } }); }, 500));
@@ -275,7 +351,7 @@
 
   api.onState(v => { V = v; render(); });
   api.onNotice(m => toast(m, true));
-  api.onNavigate(t => { if (t === 'reminders-add') { showTab('reminders'); $('#remTitle').focus(); } else if (t) showTab(t); });
+  api.onNavigate(t => { if (t === 'reminders-add') { showTab('reminders'); $('#remTitle').focus(); } else if (t === 'todos' && !(V && V.features && V.features.todos)) showTab('general'); else if (t) showTab(t); });
 
   buildDays(); defaultOnce(); showKind('once');
   api.getState().then(v => { V = v; render(); }).catch(() => toast('Could not load settings.', true));

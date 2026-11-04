@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'; font-src 'none'; connect-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sip Quick Add</title>
+<link rel="stylesheet" href="quickadd.css">
+</head>
+<body>
+<main>
+  <h1><span aria-hidden="true">📝</span> Quick add a to-do</h1>
+  <form id="form" autocomplete="off">
+    <label class="sr" for="text">What do you need to do?</label>
+    <input id="text" type="text" maxlength="120" placeholder="What do you need to do?" autofocus>
+    <p id="msg" role="status" aria-live="polite" hidden></p>
+    <div class="row">
+      <button type="submit" class="primary">Add</button>
+      <button type="button" id="cancel">Close</button>
+      <span class="hint">Enter adds, Esc closes</span>
+    </div>
+  </form>
+</main>
+<script src="quickadd.js"></script>
+</body>
+</html>

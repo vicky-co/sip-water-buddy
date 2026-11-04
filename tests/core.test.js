@@ -127,6 +127,44 @@ t('behavior settings: leave time and waiting spot are validated', () => {
   s = C.normalize({ behavior: { parked: true, spot: null, leave: 'custom', leaveSecs: 12 } }); assert.equal(s.behavior.parked, false); assert.equal(s.behavior.leave, 'custom'); assert.equal(s.behavior.leaveSecs, 12);
   s = C.normalize({ behavior: { spot: { x: 1e9, y: 2 }, leave: '<b>' } }); assert.equal(s.behavior.spot.x, 100000); assert.equal(s.behavior.leave, 'normal');
 });
+t('history: a finished day is filed, skips are counted, stats cover 30 days with deviation', () => {
+  const s = C.normalize({}); const d1 = L(2026, 10, 10, 9, 0), d2 = L(2026, 10, 11, 9, 0);
+  s.date = C.todayStr(d1); s.count = 5; s.water.goal = 8;
+  C.applyFinish(s, { type: 'water', action: 'skip', minutes: 30 }, d1, 0); C.applyFinish(s, { type: 'water', action: 'skip', minutes: 30 }, d1, 0);
+  C.applyFinish(s, { type: 'water', action: 'snooze', minutes: 5 }, d1, 0); C.applyFinish(s, { type: 'water', action: 'done', minutes: 30 }, d1, 0);
+  C.applyFinish(s, { type: 'water', action: 'skip', minutes: 30, preview: true }, d1, 0);                               // previews never count
+  assert.deepEqual(s.today, { skips: 2, skipMin: 60, snoozes: 1, snoozeMin: 5 });
+  assert.ok(C.rollover(s, d2)); assert.equal(s.count, 0); assert.deepEqual(s.today, { skips: 0, skipMin: 0, snoozes: 0, snoozeMin: 0 });
+  assert.deepEqual(s.history, [{ d: '2026-10-10', n: 5, goal: 8, skips: 2, skipMin: 60, snoozes: 1, snoozeMin: 5 }]);
+  assert.equal(C.rollover(s, d2), false);
+  s.count = 9;                                                                                                                 // today so far
+  const st = C.stats(s, d2); assert.equal(st.days.length, 30); assert.equal(st.days[29].d, '2026-10-11'); assert.equal(st.days[28].d, '2026-10-10');
+  assert.equal(st.days[28].deviation, -3); assert.equal(st.days[29].deviation, 1); assert.equal(st.days[0].has, false);
+  assert.deepEqual(st.totals, { trackedDays: 2, glasses: 14, avgPerDay: 7, goalDays: 1, avgDeviation: -1, totalDeviation: -2, skips: 2, skipMin: 60, snoozes: 1, snoozeMin: 5 });
+  // history survives a save and load, bad entries are dropped, and it is capped
+  const again = C.normalize(JSON.parse(JSON.stringify(s))); assert.deepEqual(again.history, s.history);
+  const junk = C.normalize({ history: [{ d: 'x', n: 1 }, { d: '2026-01-01', n: 'lots', goal: 99 }, 5, null].concat(Array.from({ length: 300 }, (_, i) => ({ d: new Date(2025, 0, 1 + i).toISOString().slice(0, 10), n: 3, goal: 8 }))) });
+  assert.ok(junk.history.length <= 120 && junk.history.every(h => /^\d{4}-\d{2}-\d{2}$/.test(h.d) && h.goal <= 30));
+});
+t('rollover with no water and no activity files nothing', () => {
+  const s = C.normalize({}); s.water.enabled = false; s.date = C.todayStr(L(2026, 10, 10, 9, 0)); C.rollover(s, L(2026, 10, 12, 9, 0)); assert.equal(s.history.length, 0);
+});
+t('to-do list: add, finish, delete, clear, limits, switch', () => {
+  const s = C.normalize({}); assert.equal(s.features.todos, true);
+  assert.ok(!C.addTodo(s, '   ', 1, 'aaaaaa').ok);
+  let r = C.addTodo(s, '<b>Buy</b>  milk\n', 1000, 'todo-1'); assert.ok(r.ok); assert.equal(r.todo.text, 'b Buy /b milk');                                  // markup characters are dropped, spaces tidied
+  C.addTodo(s, 'Call mum', 2000, 'todo-2'); C.addTodo(s, 'x'.repeat(500), 3000, 'todo-3'); assert.equal(s.todos[2].text.length, 120);
+  assert.ok(C.setTodoDone(s, 'todo-2', true, 5000).ok); assert.equal(s.todos[1].doneAt, 5000); assert.ok(!C.setTodoDone(s, 'nope', true, 1).ok);
+  assert.ok(C.setTodoDone(s, 'todo-2', false, 6000).ok); assert.equal(s.todos[1].doneAt, null);
+  C.setTodoDone(s, 'todo-1', true, 7000); assert.equal(C.clearDoneTodos(s), 1); assert.equal(s.todos.length, 2);
+  assert.ok(C.deleteTodo(s, 'todo-3')); assert.ok(!C.deleteTodo(s, 'todo-3'));
+  const back = C.normalize(JSON.parse(JSON.stringify(s))); assert.deepEqual(back.todos, s.todos);
+  const full = C.normalize({ todos: Array.from({ length: 500 }, (_, i) => ({ id: 'id' + String(i).padStart(6, '0'), text: 't' + i })) }); assert.equal(full.todos.length, C.MAX_TODOS);
+  assert.ok(!C.addTodo(full, 'one more', 1, 'zzzzzz').ok);
+  assert.equal(C.normalize({ todos: [{ text: '' }, { id: 'dupdup', text: 'a' }, { id: 'dupdup', text: 'b' }, 7] }).todos.length, 2);
+  let p = C.applyPatch(s, { features: { todos: false } }); assert.equal(s.features.todos, false); assert.deepEqual(p.changed, ['features.todos']);
+  p = C.applyPatch(s, { features: { todos: 'yes' } }); assert.deepEqual(p.rejected, ['features.todos']);
+});
 const U = require('../src/main/uninstall.js');
 t('uninstall plan: Linux install, source folder and unsafe paths', () => {
   const have = new Set(['/home/ann/.local/share/sip-water-buddy', '/home/ann/.local/share/applications/sip-water-buddy.desktop', '/home/ann/.config/autostart/sip-water-buddy.desktop', '/home/ann/.cache/sip-water-buddy.log', '/home/ann/.config/sip-water-buddy']);
