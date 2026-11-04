@@ -281,6 +281,7 @@ app.whenReady().then(async () => {
       return vis && await run(overlay, "!document.getElementById('remBtns').hidden");
     }, 60000, 250);
     await clearOverlay();
+    await run(sw, "sipSettings.patch({ behavior: { leave: 'instant' } })");                                  // short goodbyes: the answers below are applied when they end, and CI draws slowly
     await run(sw, "sipSettings.getState().then(s => Promise.all(s.todos.map(t => sipSettings.todoDelete(t.id))))");
     const hhmm = ms => { const d = new Date(ms); return ymdOf(ms) + 'T' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
     check('settings: global deadline reminder defaults and the per-to-do reminder choice exist', await run(sw, "sipSettings.getState().then(s => s.todoRemind.enabled === false && s.todoRemind.before === 30)") && await run(sw, "document.querySelectorAll('#todoRemBefore option').length >= 8 && !!document.getElementById('todoShowDesk') && !!document.getElementById('todoAddRemind')"));
@@ -374,7 +375,7 @@ app.whenReady().then(async () => {
     await run(sw, "sipSettings.showTodos()"); check('Settings has a button that shows the list on the desktop', await waitFor(() => overlay.isVisible(), 10000, 150));
     await shot(overlay, 'overlay-todos');
     await run(overlay, "document.getElementById('tdClose').click()"); await waitFor(() => !overlay.isVisible(), 8000, 100);
-    await run(sw, "sipSettings.patch({ todoRemind: { enabled: true, before: 30 } })");
+    await run(sw, "sipSettings.patch({ todoRemind: { enabled: true, before: 30 }, behavior: { leave: 'normal' } })");
     await run(sw, "document.querySelector('#tab-general').click()");
 
     // ---- credit and links ----
