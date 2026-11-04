@@ -41,6 +41,14 @@ It is free, open source, and never connects to the internet.
   **📌 Always wait here** (or Settings → General) makes them use that spot every time instead of a random place; **🚶 Roam again** undoes it.
 - **To-do list** (switch it on or off in Settings → General): add items in the **To-dos** tab, tick them off, clear the finished ones.
   The tray menu has **Show todos** (with how many are open) and **Quick add todo…**, a tiny window to jot one down without opening Settings.
+- **Deadlines and reminders for to-dos**: give a to-do an optional deadline (a date, and a time if you like). The hero and pet remind you before it, with a global
+  *"remind me N minutes before"* setting that each to-do can override (or switch off). Overdue to-dos are marked in red in the list and in the tray menu.
+- **Your to-dos on the desktop**: tray → **Show todos** makes the hero and pet appear, standing still, holding your list. Tick items off right there, and **drag them anywhere**;
+  Sip remembers where you left them.
+- **Today**: a tab listing every check-in the characters made today (water, reminders, to-dos) and how you answered (done, skipped, not yet). Tapped the wrong button?
+  Change the answer; Sip asks you to confirm first and keeps your glass count and skip totals in step.
+- **Only ask during certain hours** (Settings → Reminders → Water): choose a start and an end. Outside them Sip stays quiet, after the end the next ask is reset to the start,
+  and changing the hours later (a longer window, an earlier start) takes effect straight away. Windows that run past midnight work too.
 - **Last 30 days at a glance** (Settings → **Stats**): glasses per day against your goal, how far above or below the goal each day was,
   and how many check-ins and how many minutes you skipped, with a table of the exact numbers. History starts the day you update; it stays on your computer.
 - **Uninstall from inside the app**: Settings → General → *Uninstall Sip completely…* (or the tray menu). It lists exactly what it will delete and asks first.

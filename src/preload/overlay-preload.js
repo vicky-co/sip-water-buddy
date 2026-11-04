@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('sip', {
   logGlass: () => ipcRenderer.invoke('log-glass'),
   done: info => ipcRenderer.send('done', info),
   onAppear: cb => ipcRenderer.on('appear', (_e, d) => cb(d)),
+  todoSet: (id, done) => ipcRenderer.invoke('todo-set', id, done),
+  onTodos: cb => ipcRenderer.on('todos', (_e, list) => cb(list)),
   onCursor: cb => ipcRenderer.on('cursor', (_e, pt) => cb(pt)),
   onSettings: cb => ipcRenderer.on('settings', (_e, d) => cb(d)),
   setSetting: s => ipcRenderer.send('set-setting', s),

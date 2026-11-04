@@ -20,7 +20,9 @@
   const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
   const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
   const MAX_REMINDERS = 100;
-  const MAX_TODOS = 200, MAX_HISTORY = 120;
+  const MAX_TODOS = 200, MAX_HISTORY = 120, MAX_LOG = 300;
+  const STALE_MS = 2 * 3600000;   // how long after its deadline a to-do can still pop up a reminder
+  const REMIND_CHOICES = [0, 5, 10, 15, 30, 60, 120, 1440];   // minutes before a deadline offered in Settings (any 0 to 10080 is accepted)
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const obj = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
@@ -34,17 +36,19 @@
 
   const DEFAULTS = {
     v: 2, date: '', count: 0, log: [],
-    water: { enabled: true, interval: 30, goal: 8 },
+    water: { enabled: true, interval: 30, goal: 8, window: { enabled: false, start: '08:00', end: '22:00' } },   // window: only ask between start and end
     hero: { name: 'Hero', look: 'default' },
     pet: { name: 'Buddy', look: 'golden', flip: false, sound: 'bigdog', speed: 1 },
     show: 'both',
     sound: { mute: false, voice: true, pet: true, fx: true, volume: 0.6 },
     startAtLogin: true,
-    features: { todos: true },                                  // the to-do list can be switched off in Settings
+    features: { todos: true },
+    todoRemind: { enabled: true, before: 30 },                // remind this many minutes before a to-do's deadline (each to-do can override it)                                  // the to-do list can be switched off in Settings
     todos: [],                                                  // { id, text, done, createdAt, doneAt }
     history: [],                                                // one finished day each: { d: 'YYYY-MM-DD', n: glasses, goal, skips, skipMin, snoozes, snoozeMin }
     today: { skips: 0, skipMin: 0, snoozes: 0, snoozeMin: 0 }, // skipped / snoozed water check-ins so far today
-    behavior: { leave: 'normal', leaveSecs: 8, parked: false, spot: null },   // spot: where to wait (screen coordinates of the feet), used when parked
+    dayLog: [],                                                 // today's answered check-ins: { id, t, type, title, action, minutes, interval }
+    behavior: { leave: 'normal', leaveSecs: 8, parked: false, spot: null, todoSpot: null },   // spot: where to wait (screen coordinates of the feet), used when parked
     reminders: [],
   };
 
@@ -93,7 +97,7 @@
       const rec = cleanDay(Object.assign({ d: dayKey(old.getTime()), n: s.count, goal: s.water.goal }, s.today));
       s.history = s.history.filter(x => x.d !== rec.d).concat(rec).sort((a, b) => a.d < b.d ? -1 : 1).slice(-MAX_HISTORY);
     }
-    s.date = t; s.count = 0; s.log = []; s.today = emptyToday();
+    s.date = t; s.count = 0; s.log = []; s.today = emptyToday(); s.dayLog = [];
     return true;
   }
   // The last n days (oldest first). Days when Sip was not running have has:false. deviation = glasses minus that day's goal.
@@ -115,24 +119,166 @@
   }
 
   // ---------- To-do list ----------
+  // A deadline is optional: 'YYYY-MM-DD' (due by the end of that day) or 'YYYY-MM-DDTHH:MM'.
+  const DUE_RE = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}))?$/;
+  function cleanDue(v) {
+    if (typeof v !== 'string') return null;
+    const m = DUE_RE.exec(v); if (!m || !parseDate(m[1])) return null;
+    return (!m[2] || TIME_RE.test(m[2])) ? v : null;
+  }
+  const dueAt = due => { const m = typeof due === 'string' && DUE_RE.exec(due); if (!m) return null; return m[2] ? atLocal(m[1], m[2]) : atLocal(m[1], '23:59') + 59999; };
+  const isOverdue = (t, now) => !t.done && !!t.due && dueAt(t.due) != null && dueAt(t.due) < now;
+  // Per to-do: null = use the global setting, 'off' = never, or a number of minutes before the deadline (0 = at the deadline).
+  const cleanRemind = v => v === 'off' ? 'off' : (Number.isInteger(v) && v >= 0 && v <= 10080) ? v : null;
   const cleanTodo = t => {
     t = obj(t); const text = cleanText(t.text, 120); if (!text) return null;
     return { id: (typeof t.id === 'string' && /^[\w-]{6,40}$/.test(t.id)) ? t.id : null, text, done: t.done === true,
-      createdAt: Number.isFinite(t.createdAt) ? t.createdAt : 0, doneAt: t.done === true && Number.isFinite(t.doneAt) ? t.doneAt : null };
+      createdAt: Number.isFinite(t.createdAt) ? t.createdAt : 0, doneAt: t.done === true && Number.isFinite(t.doneAt) ? t.doneAt : null, due: cleanDue(t.due),
+      remind: cleanRemind(t.remind), reminded: Number.isFinite(t.reminded) ? t.reminded : null, snoozeUntil: Number.isFinite(t.snoozeUntil) ? t.snoozeUntil : null };
   };
-  function addTodo(s, text, now, id) {
+  function addTodo(s, text, now, id, due, remind) {
     const clean = cleanText(text, 120);
     if (!clean) return fail('Type what you need to do.');
     if (s.todos.length >= MAX_TODOS) return fail('The list is full (' + MAX_TODOS + '). Clear some finished ones first.');
-    const todo = { id, text: clean, done: false, createdAt: now, doneAt: null };
+    const hasDue = due !== undefined && due !== null && due !== '';
+    if (hasDue && !cleanDue(due)) return fail('Pick a valid deadline.');
+    if (remind !== undefined && remind !== null && cleanRemind(remind) === null) return fail('Pick a valid reminder time.');
+    const todo = { id, text: clean, done: false, createdAt: now, doneAt: null, due: hasDue ? due : null, remind: cleanRemind(remind), reminded: null, snoozeUntil: null };
     s.todos.push(todo); return { ok: true, todo };
   }
   function setTodoDone(s, id, done, now) {
     const t = s.todos.find(x => x.id === id); if (!t) return fail('That item is gone.');
     t.done = done === true; t.doneAt = t.done ? now : null; return { ok: true, todo: t };
   }
+  function setTodoDue(s, id, due) {
+    const t = s.todos.find(x => x.id === id); if (!t) return fail('That item is gone.');
+    if (due === undefined || due === null || due === '') { t.due = null; t.reminded = null; t.snoozeUntil = null; return { ok: true, todo: t }; }
+    if (!cleanDue(due)) return fail('Pick a valid deadline.');
+    t.due = due; t.reminded = null; t.snoozeUntil = null; return { ok: true, todo: t };
+  }
+  function setTodoRemind(s, id, remind) {
+    const t = s.todos.find(x => x.id === id); if (!t) return fail('That item is gone.');
+    if (remind === undefined || remind === null || remind === '') remind = null;
+    else if (cleanRemind(remind) === null) return fail('Pick a valid reminder time.');
+    t.remind = remind; t.reminded = null; t.snoozeUntil = null; return { ok: true, todo: t };
+  }
+  // When a to-do's deadline reminder is due, or null when it has none. A deadline without a time counts from 09:00 that day.
+  function todoRemindAt(s, t) {
+    if (!t.due || t.done) return null;
+    const mode = t.remind === null ? (s.todoRemind.enabled ? s.todoRemind.before : 'off') : t.remind;
+    if (mode === 'off') return null;
+    const m = DUE_RE.exec(t.due), base = m[2] ? atLocal(m[1], m[2]) : atLocal(m[1], '09:00');
+    return base == null ? null : base - mode * 60000;
+  }
+  // The to-do whose reminder should be shown now (once; again after a "+10 min"), earliest first.
+  function nextTodoReminder(s, now) {
+    if (!s.features.todos) return null;
+    let best = null;
+    for (const t of s.todos) {
+      const at = todoRemindAt(s, t); if (at == null) continue;
+      // a deadline that passed hours ago (Sip was off, or the list is old) is shown as overdue in the list, not popped up
+      if (t.snoozeUntil == null && now - dueAt(t.due) > STALE_MS) continue;
+      const ready = t.snoozeUntil != null ? now >= t.snoozeUntil : (t.reminded == null && now >= at);
+      if (ready && (!best || at < best.at)) best = { t, at };
+    }
+    return best ? { id: best.t.id, late: now - best.at > 90000 } : null;
+  }
   function deleteTodo(s, id) { const n = s.todos.length; s.todos = s.todos.filter(x => x.id !== id); return n !== s.todos.length; }
   function clearDoneTodos(s) { const n = s.todos.length; s.todos = s.todos.filter(x => !x.done); return n - s.todos.length; }
+
+  // ---------- Water: only ask inside a window of the day ----------
+  const isTime = v => typeof v === 'string' && TIME_RE.test(v);
+  const toMin = hm => { const m = TIME_RE.exec(hm); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+  function cleanWindow(w) {
+    w = obj(w); const d = DEFAULTS.water.window;
+    const start = isTime(w.start) ? w.start : d.start, end = isTime(w.end) ? w.end : d.end;
+    return start === end ? { enabled: false, start: d.start, end: d.end } : { enabled: w.enabled === true, start, end };
+  }
+  // The window may run past midnight (22:00 to 06:00). The start is included, the end is not.
+  function inWaterWindow(w, ts) {
+    if (!w || !w.enabled) return true;
+    const d = new Date(ts), m = d.getHours() * 60 + d.getMinutes(), a = toMin(w.start), b = toMin(w.end);
+    return a < b ? (m >= a && m < b) : (m >= a || m < b);
+  }
+  // The next time the window opens, strictly after ts.
+  function nextWaterStart(w, ts) {
+    const a = toMin(w.start), d = new Date(ts);
+    let t = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(a / 60), a % 60, 0, 0).getTime();
+    if (t <= ts) { const n = new Date(t); n.setDate(n.getDate() + 1); t = n.getTime(); }
+    return t;
+  }
+  // Where the next water ask may really land: inside the window. Called every minute, so it is also what "resets" the asks
+  // when the window closes (the next one becomes the opening time) and what follows the window when the person edits it.
+  function gateWater(state, nextAt, now) {
+    const w = state.water.window; if (!state.water.enabled || !w.enabled || nextAt == null) return nextAt;
+    if (!inWaterWindow(w, now)) { const open = nextWaterStart(w, now); return nextAt < open ? open : (inWaterWindow(w, nextAt) ? nextAt : nextWaterStart(w, nextAt)); }
+    return inWaterWindow(w, nextAt) ? nextAt : nextWaterStart(w, nextAt);
+  }
+  // The person changed the window (or it was switched off). If the asks had been pushed out to the next opening and the window now
+  // covers this moment (start moved earlier, end moved later, or the window was turned off), they resume instead of staying quiet.
+  function rescheduleWater(state, nextAt, now) {
+    const w = state.water.window, cycle = state.water.interval * 60000;
+    let base = nextAt == null ? now + cycle : nextAt;
+    if (base > now + cycle) base = now + (w.enabled ? 60000 : cycle);
+    return gateWater(state, base, now);
+  }
+
+  // ---------- Today's answered check-ins (the day log) ----------
+  const LOG_ACTIONS = ['done', 'skip', 'snooze'];
+  const cleanLogEntry = e => {
+    e = obj(e); if (!Number.isFinite(e.t) || !['water', 'reminder', 'todo'].includes(e.type) || !LOG_ACTIONS.includes(e.action)) return null;
+    return { id: (typeof e.id === 'string' && /^[\w-]{6,40}$/.test(e.id)) ? e.id : null, t: e.t, type: e.type, title: cleanText(e.title, 120) || (e.type === 'water' ? 'Water' : 'Check-in'),
+      action: e.action, minutes: clampInt(e.minutes, 0, 1440, 0), interval: clampInt(e.interval, 0, 720, 0) };
+  };
+  function logAction(s, entry, id) {
+    const e = cleanLogEntry(Object.assign({ id }, entry)); if (!e) return null;
+    s.dayLog.push(e); if (s.dayLog.length > MAX_LOG) s.dayLog = s.dayLog.slice(-MAX_LOG); return e;
+  }
+  // Undo (sign -1) or apply (sign +1) what one entry did to today's numbers.
+  function applyEntryEffect(s, e, action, sign) {
+    if (e.type === 'water') {
+      const mins = action === 'snooze' ? 5 : (e.interval || s.water.interval);
+      if (action === 'done') { s.count = Math.max(0, Math.min(999, s.count + sign)); if (sign > 0) s.log.push(e.t); else { const i = s.log.lastIndexOf(e.t); if (i >= 0) s.log.splice(i, 1); else s.log.pop(); } }
+      else if (action === 'skip') { s.today.skips = Math.max(0, s.today.skips + sign); s.today.skipMin = Math.max(0, s.today.skipMin + sign * mins); }
+      else if (action === 'snooze') { s.today.snoozes = Math.max(0, s.today.snoozes + sign); s.today.snoozeMin = Math.max(0, s.today.snoozeMin + sign * mins); }
+    }
+  }
+  const ACTION_WORD = { done: 'Done', skip: 'Skipped', snooze: 'Not yet' };
+  // What changing an entry would do, in words, so the person can confirm. { ok, message, detail }
+  function previewLogEdit(s, id, action) {
+    const e = s.dayLog.find(x => x.id === id); if (!e) return fail('That entry is gone.');
+    if (action !== 'delete' && !LOG_ACTIONS.includes(action)) return fail('Pick Done, Skipped or Not yet.');
+    if (action === e.action) return fail('That is already its status.');
+    const what = (e.type === 'water' ? 'Water check-in' : e.title) + ' at ' + new Date(e.t).toTimeString().slice(0, 5);
+    const lines = [];
+    const sim = JSON.parse(JSON.stringify({ count: s.count, today: s.today }));
+    const tmp = { count: sim.count, today: sim.today, log: s.log.slice(), water: s.water };
+    applyEntryEffect(tmp, e, e.action, -1); if (action !== 'delete') applyEntryEffect(tmp, e, action, +1);
+    if (e.type === 'water') {
+      if (tmp.count !== s.count) lines.push(`Glasses today: ${s.count} → ${tmp.count}.`);
+      if (tmp.today.skips !== s.today.skips) lines.push(`Skipped check-ins: ${s.today.skips} → ${tmp.today.skips}.`);
+      if (tmp.today.snoozes !== s.today.snoozes) lines.push(`"Not yet" taps: ${s.today.snoozes} → ${tmp.today.snoozes}.`);
+    } else if (e.type === 'todo') {
+      const todo = s.todos.find(x => x.text === e.title);
+      if (todo && (e.action === 'done' || action === 'done')) lines.push(action === 'done' ? 'The to-do will be marked done.' : 'The to-do will be marked not done.');
+      else lines.push('Only the log changes.');
+    } else lines.push('Only the log changes; the reminder itself is not touched.');
+    return { ok: true, message: action === 'delete' ? `Remove "${what}" from today's list?` : `Change "${what}" from ${ACTION_WORD[e.action]} to ${ACTION_WORD[action]}?`, detail: lines.join('\n') };
+  }
+  function editLogEntry(s, id, action, now) {
+    const pv = previewLogEdit(s, id, action); if (!pv.ok) return pv;
+    const e = s.dayLog.find(x => x.id === id);
+    applyEntryEffect(s, e, e.action, -1);
+    if (e.type === 'todo') {
+      const todo = s.todos.find(x => x.text === e.title);
+      if (todo && e.action === 'done' && action !== 'done') { todo.done = false; todo.doneAt = null; }
+      if (todo && action === 'done' && e.action !== 'done') { todo.done = true; todo.doneAt = now; }
+    }
+    if (action === 'delete') { s.dayLog = s.dayLog.filter(x => x.id !== id); return { ok: true, removed: true }; }
+    e.action = action; e.minutes = e.type === 'water' ? (action === 'snooze' ? 5 : (e.interval || s.water.interval)) : e.minutes;
+    applyEntryEffect(s, e, action, +1);
+    return { ok: true, entry: e };
+  }
 
   // ---------- Reminders ----------
   // Reads the schedule fields for r.kind from src into r, validates them, and works out nextAt. Returns an error string or null.
@@ -245,7 +391,8 @@
   function pickNext(state, waterNextAt, now) {
     const due = state.reminders.filter(r => isDue(r, now)).sort((a, b) => a.nextAt - b.nextAt);
     if (due.length) return { type: 'reminder', id: due[0].id };
-    if (state.water.enabled && waterNextAt != null && now >= waterNextAt) return { type: 'water' };
+    const td = nextTodoReminder(state, now); if (td) return { type: 'todo', id: td.id, late: td.late };
+    if (state.water.enabled && waterNextAt != null && now >= waterNextAt && inWaterWindow(state.water.window, now)) return { type: 'water' };
     return null;
   }
   function nextEvent(state, waterNextAt) {
@@ -255,18 +402,31 @@
     return best;
   }
   // Applies the answer from the character window. Returns the new waterNextAt.
-  function applyFinish(state, info, now, waterNextAt) {
+  function applyFinish(state, info, now, waterNextAt, newId = () => Math.random().toString(36).slice(2, 12)) {
     info = obj(info);
     if (info.preview) return waterNextAt;
     if (info.type === 'water') {
       const mins = clampInt(info.minutes, 1, 720, state.water.interval);
+      if (LOG_ACTIONS.includes(info.action)) logAction(state, { t: now, type: 'water', title: 'Water', action: info.action, minutes: mins, interval: state.water.interval }, newId());
       if (info.action === 'skip') { state.today.skips += 1; state.today.skipMin += mins; }
       else if (info.action === 'snooze') { state.today.snoozes += 1; state.today.snoozeMin += mins; }
       return now + mins * 60000;
     }
     if (info.type === 'reminder') {
       const r = state.reminders.find(x => x.id === info.id);
-      if (r && ['done', 'skip', 'snooze'].includes(info.action)) afterAction(r, info.action, now, info.minutes);
+      if (r && ['done', 'skip', 'snooze'].includes(info.action)) {
+        afterAction(r, info.action, now, info.minutes);
+        logAction(state, { t: now, type: 'reminder', title: r.title, action: info.action, minutes: info.action === 'snooze' ? clampInt(info.minutes, 1, 1440, 10) : 0 }, newId());
+      }
+    }
+    if (info.type === 'todo') {
+      const t = state.todos.find(x => x.id === info.id);
+      if (t && LOG_ACTIONS.includes(info.action)) {
+        if (info.action === 'done') { t.done = true; t.doneAt = now; t.snoozeUntil = null; }
+        else if (info.action === 'snooze') t.snoozeUntil = now + clampInt(info.minutes, 1, 1440, 10) * 60000;
+        else t.snoozeUntil = null;
+        logAction(state, { t: now, type: 'todo', title: t.text, action: info.action, minutes: info.action === 'snooze' ? clampInt(info.minutes, 1, 1440, 10) : 0 }, newId());
+      }
     }
     return waterNextAt;
   }
@@ -300,6 +460,7 @@
     s.water.enabled = typeof w.enabled === 'boolean' ? w.enabled : true;
     s.water.interval = clampInt(w.interval !== undefined ? w.interval : raw.interval, 1, 720, 30);
     s.water.goal = clampInt(w.goal !== undefined ? w.goal : raw.goal, 1, 30, 8);
+    s.water.window = cleanWindow(w.window);
     const h = obj(raw.hero);
     s.hero.name = cleanText(h.name, 24) || 'Hero';
     const hl = h.look !== undefined ? h.look : (raw.avatar === '3d' ? 'default' : raw.avatar);
@@ -324,8 +485,11 @@
     s.behavior.leave = LEAVE.includes(b.leave) ? b.leave : 'normal';
     s.behavior.leaveSecs = clampInt(b.leaveSecs, 1, 60, 8);
     s.behavior.spot = cleanSpot(b.spot);
+    s.behavior.todoSpot = cleanSpot(b.todoSpot);
     s.behavior.parked = b.parked === true && !!s.behavior.spot;
     s.features.todos = obj(raw.features).todos !== false;
+    const tr = obj(raw.todoRemind);
+    s.todoRemind = { enabled: tr.enabled !== false, before: clampInt(tr.before, 0, 10080, 30) };
     const seenT = new Set();
     for (const tt of (Array.isArray(raw.todos) ? raw.todos : []).slice(0, MAX_TODOS)) {
       const c = cleanTodo(tt); if (!c) continue;
@@ -336,6 +500,8 @@
     for (const hh of (Array.isArray(raw.history) ? raw.history : []).slice(-MAX_HISTORY * 2)) { const c = cleanDay(hh); if (c) days.set(c.d, c); }
     s.history = [...days.values()].sort((a, b) => a.d < b.d ? -1 : 1).slice(-MAX_HISTORY);
     s.today = cleanToday(raw.today);
+    const seenL = new Set();
+    for (const ee of (Array.isArray(raw.dayLog) ? raw.dayLog : []).slice(-MAX_LOG)) { const c = cleanLogEntry(ee); if (!c) continue; if (!c.id || seenL.has(c.id)) c.id = newId(); seenL.add(c.id); s.dayLog.push(c); }
     const seen = new Set();
     for (const rr of (Array.isArray(raw.reminders) ? raw.reminders : []).slice(0, MAX_REMINDERS)) {
       const c = cleanReminder(rr, now); if (!c) continue;
@@ -367,9 +533,22 @@
     const w = obj(patch.water);
     if ('enabled' in w) typeof w.enabled === 'boolean' ? set(s.water, 'enabled', w.enabled, 'water.enabled') : rejected.push('water.enabled');
     if ('interval' in w) { const n = clampInt(w.interval, 1, 720, NaN); Number.isFinite(n) ? set(s.water, 'interval', n, 'water.interval') : rejected.push('water.interval'); }
+    if ('window' in w) {
+      const ww = obj(w.window), cur = s.water.window, next = { enabled: cur.enabled, start: cur.start, end: cur.end };
+      let bad = false;
+      if ('enabled' in ww) typeof ww.enabled === 'boolean' ? next.enabled = ww.enabled : bad = true;
+      if ('start' in ww) isTime(ww.start) ? next.start = ww.start : bad = true;
+      if ('end' in ww) isTime(ww.end) ? next.end = ww.end : bad = true;
+      if (next.start === next.end) bad = true;                                       // an empty window would never ask
+      if (bad) rejected.push('water.window');
+      else for (const k of ['enabled', 'start', 'end']) set(cur, k, next[k], 'water.window.' + k);
+    }
     if ('goal' in w) { const n = clampInt(w.goal, 1, 30, NaN); Number.isFinite(n) ? set(s.water, 'goal', n, 'water.goal') : rejected.push('water.goal'); }
     const ft = obj(patch.features);
     if ('todos' in ft) typeof ft.todos === 'boolean' ? set(s.features, 'todos', ft.todos, 'features.todos') : rejected.push('features.todos');
+    const tr = obj(patch.todoRemind);
+    if ('enabled' in tr) typeof tr.enabled === 'boolean' ? set(s.todoRemind, 'enabled', tr.enabled, 'todoRemind.enabled') : rejected.push('todoRemind.enabled');
+    if ('before' in tr) { const n = Number(tr.before); (Number.isInteger(n) && n >= 0 && n <= 10080) ? set(s.todoRemind, 'before', n, 'todoRemind.before') : rejected.push('todoRemind.before'); }
     const bh = obj(patch.behavior);
     if ('leave' in bh) LEAVE.includes(bh.leave) ? set(s.behavior, 'leave', bh.leave, 'behavior.leave') : rejected.push('behavior.leave');
     if ('leaveSecs' in bh) { const n = clampInt(bh.leaveSecs, 1, 60, NaN); Number.isFinite(n) ? set(s.behavior, 'leaveSecs', n, 'behavior.leaveSecs') : rejected.push('behavior.leaveSecs'); }
@@ -377,6 +556,11 @@
       const sp = bh.spot === null ? null : cleanSpot(bh.spot);
       if (bh.spot !== null && !sp) rejected.push('behavior.spot');
       else if (JSON.stringify(s.behavior.spot) !== JSON.stringify(sp)) { s.behavior.spot = sp; if (!sp) s.behavior.parked = false; changed.push('behavior.spot'); }
+    }
+    if ('todoSpot' in bh) {
+      const sp = bh.todoSpot === null ? null : cleanSpot(bh.todoSpot);
+      if (bh.todoSpot !== null && !sp) rejected.push('behavior.todoSpot');
+      else if (JSON.stringify(s.behavior.todoSpot) !== JSON.stringify(sp)) { s.behavior.todoSpot = sp; changed.push('behavior.todoSpot'); }
     }
     if ('parked' in bh) {
       if (typeof bh.parked !== 'boolean') rejected.push('behavior.parked');
@@ -389,5 +573,6 @@
   return { LEAVE, DEFAULTS, SPEEDS, SHOW, PET_LOOKS, PET_SOUNDS, KINDS, MAX_REMINDERS, DAY_NAMES, FILE,
     cleanText, clampInt, isHeroLook, isPetLook, isPetSound, parseDate, atLocal, todayStr, nextDue,
     makeReminder, updateReminder, afterAction, catchUp, isDue, describe, pickNext, nextEvent, applyFinish,
-    normalize, applyPatch, rollover, stats, dayKey, MAX_TODOS, addTodo, setTodoDone, deleteTodo, clearDoneTodos };
+    REMIND_CHOICES, setTodoRemind, todoRemindAt, nextTodoReminder, logAction, previewLogEdit, editLogEntry, ACTION_WORD,
+    normalize, applyPatch, cleanDue, dueAt, isOverdue, setTodoDue, inWaterWindow, nextWaterStart, gateWater, rescheduleWater, rollover, stats, dayKey, MAX_TODOS, addTodo, setTodoDone, deleteTodo, clearDoneTodos };
 });

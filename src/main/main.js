@@ -227,7 +227,7 @@ function createOverlay() {
   overlay.webContents.once('did-finish-load', () => {
     console.log('Character window loaded.');
     pushOverlay();
-    if (S.water.enabled) setTimeout(() => appear('intro', { type: 'water' }), 1200);
+    if (S.water.enabled && Core.inWaterWindow(S.water.window, Date.now())) setTimeout(() => appear('intro', { type: 'water' }), 1200);   // quiet outside the chosen hours
   });
 }
 
@@ -238,7 +238,7 @@ function spotWindow(spot) {
   return { x: Math.round(clampTo(spot.x - HERO_X, a.x, a.x + a.width - WIN_W)), y: Math.round(clampTo(spot.y - (WIN_H - GROUND), a.y, a.y + a.height - WIN_H)) };
 }
 function appear(kind, item) {
-  if (busy || !overlay || overlay.isDestroyed()) return false;
+  if ((busy && !(active && active.type === 'todos')) || !overlay || overlay.isDestroyed()) return false;       // an open to-do list gives way to a check-in
   busy = true; active = item || { type: 'water' };
   console.log(`Check-in (${kind}: ${active.type}) at ${new Date().toLocaleTimeString()}`);
   const wa = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
@@ -247,6 +247,7 @@ function appear(kind, item) {
   if (parked) { x = parked.x; y = parked.y; }
   overlay.setPosition(x, y); overlay.showInactive(); overlay.setAlwaysOnTop(true, 'screen-saver');
   const out = { type: active.type };
+  if (active.type === 'todo') Object.assign(out, { id: active.id, title: active.title, note: active.note || '', late: !!active.late });
   if (active.type === 'reminder') Object.assign(out, { id: active.id, title: active.title, note: active.note || '', late: !!active.late, preview: !!active.preview });
   if (active.type === 'hello') out.preview = true;
   overlay.webContents.send('appear', { kind, item: out, wa, parked: !!parked, areas: screen.getAllDisplays().map(d => d.workArea), start: { x, y },
@@ -261,10 +262,10 @@ function testReminder(id) {
 }
 function finish(info) {
   info = info && typeof info === 'object' ? info : {};
-  const clean = { type: ['water', 'reminder', 'hello'].includes(info.type) ? info.type : 'hello', id: typeof info.id === 'string' ? info.id.slice(0, 40) : '',
+  const clean = { type: ['water', 'reminder', 'todo', 'todos', 'hello'].includes(info.type) ? info.type : 'hello', id: typeof info.id === 'string' ? info.id.slice(0, 40) : '',
     action: ['done', 'skip', 'snooze'].includes(info.action) ? info.action : '', minutes: Number.isFinite(info.minutes) ? info.minutes : undefined, preview: info.preview === true };
   rollover();
-  waterNextAt = Core.applyFinish(S, clean, Date.now(), waterNextAt);
+  waterNextAt = Core.gateWater(S, Core.applyFinish(S, clean, Date.now(), waterNextAt, () => crypto.randomUUID()), Date.now());
   busy = false; active = null;
   if (overlay && !overlay.isDestroyed()) overlay.hide();
   save(); refreshUi();
@@ -289,7 +290,7 @@ function viewState() {
   return {
     now: Date.now(), version: APP_VERSION, electron: process.versions.electron, platform: process.platform,
     show: S.show, hero: { ...S.hero }, pet: { ...S.pet }, sound: { ...S.sound }, startAtLogin: S.startAtLogin, autostartSupported: autostartSupported(), behavior: { ...S.behavior },
-    features: { ...S.features }, todos: S.todos.map(t => ({ ...t })), stats: Core.stats(S),
+    features: { ...S.features }, todoRemind: { ...S.todoRemind }, today: { ...S.today, count: S.count, goal: S.water.goal }, dayLog: S.dayLog.slice().sort((a, b) => a.t - b.t), todos: S.todos.map(t => ({ ...t, dueAt: Core.dueAt(t.due), overdue: Core.isOverdue(t, Date.now()) })), stats: Core.stats(S),
     water: { ...S.water, count: S.count, nextAt: S.water.enabled ? waterNextAt : null },
     heroLooks: looksFor('avatar'), petLooks: looksFor('pet'), petSounds: looksFor('sound'),
     reminders: S.reminders.map(r => ({ ...r, describe: Core.describe(r) })),
@@ -315,16 +316,19 @@ function buildTray() {
   items.push({ label: 'Open Settings…', click: () => openSettings() },
     { label: 'Add a reminder…', click: () => openSettings('reminders-add') });
   if (S.features.todos) {
-    const open = S.todos.filter(t => !t.done).length;
-    items.push({ label: open ? `Show todos (${open} open)` : 'Show todos', click: () => openSettings('todos') });
+    const open = S.todos.filter(t => !t.done).length, late = S.todos.filter(t => Core.isOverdue(t, Date.now())).length;
+    items.push({ label: open ? `Show todos (${open} open${late ? ', ' + late + ' overdue' : ''})` : 'Show todos', click: () => showTodos() });
   }
   items.push({ label: 'Show me now', click: () => askNow() });
-  if (S.water.enabled) items.push({ label: 'I just had water', click: () => { rollover(); S.count = Math.min(999, S.count + 1); S.log.push(Date.now()); S.log = S.log.slice(-200); waterNextAt = Date.now() + S.water.interval * 60000; save(); refreshUi(); } });
+  if (S.water.enabled) items.push({ label: 'I just had water', click: () => { rollover(); S.count = Math.min(999, S.count + 1); S.log.push(Date.now()); S.log = S.log.slice(-200); Core.logAction(S, { t: Date.now(), type: 'water', title: 'Water (tray)', action: 'done', minutes: S.water.interval, interval: S.water.interval }, crypto.randomUUID()); waterNextAt = Core.gateWater(S, Date.now() + S.water.interval * 60000, Date.now()); save(); refreshUi(); } });
   items.push({ type: 'separator' }, { label: 'Uninstall Sip completely…', click: () => { uninstallEverything(); } }, { label: 'Quit', click: () => app.quit() });
   tray.setContextMenu(Menu.buildFromTemplate(items));
   tray.setToolTip(S.water.enabled ? `Sip: ${S.count} of ${S.water.goal} glasses today` : 'Sip');
 }
-function refreshUi() { buildTray(); pushSettingsState(); }
+function refreshUi() {
+  buildTray(); pushSettingsState();
+  if (busy && active && active.type === 'todos' && overlay && !overlay.isDestroyed()) overlay.webContents.send('todos', todoPayload());   // keep the list on the desktop in step
+}
 
 // ---------- Messages from the character window (checked: right window, right page, right shape) ----------
 const fromOverlay = (ch, fn) => ipcMain.on(ch, (e, ...a) => { if (fromWin(e, overlay)) fn(...a); });
@@ -353,6 +357,7 @@ fromOverlay('set-setting', patch => {      // the speech bubble can only change 
     safe.behavior = {};
     if ('spot' in p.behavior) safe.behavior.spot = p.behavior.spot;
     if ('parked' in p.behavior) safe.behavior.parked = p.behavior.parked;
+    if ('todoSpot' in p.behavior) safe.behavior.todoSpot = p.behavior.todoSpot;
   }
   if (Core.applyPatch(S, safe).changed.length) { save(); pushSettingsState(); }
 });
@@ -375,10 +380,13 @@ handleOverlay('log-glass', () => { rollover(); S.count = Math.min(999, S.count +
 const handleSettings = (ch, fn) => ipcMain.handle(ch, async (e, ...a) => { if (!fromWin(e, settingsWin)) throw new Error('blocked'); return fn(...a); });
 handleSettings('settings:get', () => viewState());
 handleSettings('settings:patch', patch => {
-  const before = { interval: S.water.interval, enabled: S.water.enabled, login: S.startAtLogin };
+  const win = () => JSON.stringify(S.water.window);
+  const before = { interval: S.water.interval, enabled: S.water.enabled, login: S.startAtLogin, win: win() };
   const r = Core.applyPatch(S, patch);
   if (r.changed.length) {
-    if (S.water.enabled !== before.enabled || S.water.interval !== before.interval) waterNextAt = Date.now() + S.water.interval * 60000;
+    const now = Date.now();
+    if (S.water.enabled !== before.enabled || S.water.interval !== before.interval) waterNextAt = Core.gateWater(S, now + S.water.interval * 60000, now);
+    else if (win() !== before.win) waterNextAt = Core.rescheduleWater(S, waterNextAt, now);     // editing the hours: asks resume or move to match
     if (S.startAtLogin !== before.login) applyLogin();
     save(); pushOverlay(); refreshUi();
   }
@@ -417,7 +425,7 @@ handleSettings('settings:reminder-clear-done', () => { S.reminders = S.reminders
 handleSettings('settings:reminder-test', id => ({ ok: testReminder(id) }));
 handleSettings('settings:water', op => {
   const o = op && typeof op === 'object' ? op : {}; rollover();
-  if (o.reset === true) { S.count = 0; S.log = []; } else if (Number.isInteger(o.delta)) S.count = Math.max(0, Math.min(999, S.count + Math.max(-5, Math.min(5, o.delta))));
+  if (o.reset === true) { S.count = 0; S.log = []; S.today = { skips: 0, skipMin: 0, snoozes: 0, snoozeMin: 0 }; S.dayLog = S.dayLog.filter(e => e.type !== 'water'); } else if (Number.isInteger(o.delta)) S.count = Math.max(0, Math.min(999, S.count + Math.max(-5, Math.min(5, o.delta))));
   save(); refreshUi(); return viewState();
 });
 handleSettings('settings:ask-now', () => ({ ok: askNow() }));
@@ -430,16 +438,68 @@ handleSettings('settings:open-log', async () => { await shell.openPath(logFile()
 
 // ---------- To-do list ----------
 const todoView = () => viewState();
-function todoAdd(text) {
+function todoAdd(text, due, remind) {
   if (!S.features.todos) return { ok: false, error: 'The to-do list is switched off in Settings > General.' };
-  const r = Core.addTodo(S, typeof text === 'string' ? text : '', Date.now(), crypto.randomUUID());
+  if (due !== undefined && due !== null && typeof due !== 'string') return { ok: false, error: 'Pick a valid deadline.' };
+  const r = Core.addTodo(S, typeof text === 'string' ? text : '', Date.now(), crypto.randomUUID(), typeof due === 'string' ? due : undefined, remind);
   if (r.ok) { save(); refreshUi(); }
   return r;
 }
-handleSettings('settings:todo-add', text => { const r = todoAdd(text); return { ok: r.ok, error: r.error || '', view: todoView() }; });
+handleSettings('settings:todo-due', (id, due) => { const r = Core.setTodoDue(S, typeof id === 'string' ? id.slice(0, 40) : '', typeof due === 'string' ? due : null); if (r.ok) { save(); refreshUi(); } return { ok: r.ok, error: r.error || '', view: todoView() }; });
+handleSettings('settings:todo-remind', (id, remind) => { const r = Core.setTodoRemind(S, typeof id === 'string' ? id.slice(0, 40) : '', remind); if (r.ok) { save(); refreshUi(); } return { ok: r.ok, error: r.error || '', view: todoView() }; });
+handleSettings('settings:todo-add', (text, due, remind) => { const r = todoAdd(text, due, remind); return { ok: r.ok, error: r.error || '', view: todoView() }; });
 handleSettings('settings:todo-done', (id, done) => { const r = Core.setTodoDone(S, typeof id === 'string' ? id.slice(0, 40) : '', done === true, Date.now()); if (r.ok) { save(); refreshUi(); } return { ok: r.ok, view: todoView() }; });
 handleSettings('settings:todo-delete', id => { const ok = Core.deleteTodo(S, typeof id === 'string' ? id.slice(0, 40) : ''); if (ok) { save(); refreshUi(); } return { ok, view: todoView() }; });
 handleSettings('settings:todo-clear-done', () => { const n = Core.clearDoneTodos(S); if (n) { save(); refreshUi(); } return { ok: true, cleared: n, view: todoView() }; });
+
+// "Due Mon 3 Nov at 17:00" / "Overdue: ..." for the line under a to-do reminder
+function dueNote(t, now) {
+  const at = Core.dueAt(t.due); if (at == null) return '';
+  const hasT = t.due.length > 10, d = new Date(+t.due.slice(0, 4), +t.due.slice(5, 7) - 1, +t.due.slice(8, 10), hasT ? +t.due.slice(11, 13) : 0, hasT ? +t.due.slice(14, 16) : 0);
+  const when = d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) + (t.due.length > 10 ? ' at ' + t.due.slice(11) : '');
+  return (at < now ? 'Overdue: ' : 'Due ') + when;
+}
+
+// ---------- The to-do list on the desktop: the hero and pet appear and hold the list; it can be dragged anywhere ----------
+let todoShownAt = 0;
+function todoPayload() {
+  const now = Date.now();
+  return S.todos.map(t => ({ id: t.id, text: t.text, done: t.done, due: t.due, dueAt: Core.dueAt(t.due), overdue: Core.isOverdue(t, now) }))
+    .sort((a, b) => (a.done - b.done) || ((a.dueAt == null) - (b.dueAt == null)) || ((a.dueAt || 0) - (b.dueAt || 0)));
+}
+function showTodos() {
+  if (!S.features.todos) { openSettings('general'); return false; }
+  if (!overlay || overlay.isDestroyed() || (busy && !(active && active.type === 'todos'))) { openSettings('todos'); return false; }   // a check-in is on screen: use Settings instead
+  busy = true; active = { type: 'todos' }; todoShownAt = Date.now();
+  const wa = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  let x = wa.x + wa.width - WIN_W - 40, y = wa.y + wa.height - WIN_H;
+  if (S.behavior.todoSpot) { const sp = spotWindow(S.behavior.todoSpot); x = sp.x; y = sp.y; }
+  console.log(`Showing the to-do list (${S.todos.filter(t => !t.done).length} open)`);
+  overlay.setPosition(x, y); overlay.showInactive(); overlay.setAlwaysOnTop(true, 'screen-saver');
+  overlay.webContents.send('appear', { kind: 'todos', item: { type: 'todos', todos: todoPayload() }, wa, areas: screen.getAllDisplays().map(d => d.workArea), start: { x, y },
+    count: S.count, goal: S.water.goal, interval: S.water.interval, waterEnabled: S.water.enabled, settings: overlayPayload() });
+  refreshUi();
+  return true;
+}
+handleSettings('settings:show-todos', () => ({ ok: showTodos() }));
+handleOverlay('todo-set', (id, done) => {
+  if (S.features.todos) { const r = Core.setTodoDone(S, typeof id === 'string' ? id.slice(0, 40) : '', done === true, Date.now()); if (r.ok) { save(); refreshUi(); } }
+  return todoPayload();
+});
+
+// ---------- Today's answered check-ins: edit them (after asking) ----------
+handleSettings('settings:log-edit', async (id, action) => {
+  id = typeof id === 'string' ? id.slice(0, 40) : ''; action = ['done', 'skip', 'snooze', 'delete'].includes(action) ? action : '';
+  rollover();
+  const pv = Core.previewLogEdit(S, id, action);
+  if (!pv.ok) return { ok: false, error: pv.error, view: viewState() };
+  const parent = settingsWin && !settingsWin.isDestroyed() ? settingsWin : undefined;
+  const r = await dialog.showMessageBox(parent, { type: 'question', title: 'Update today’s list?', message: pv.message, detail: pv.detail, buttons: [action === 'delete' ? 'Remove it' : 'Update', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true });
+  if (r.response !== 0) return { ok: false, cancelled: true, view: viewState() };
+  const res = Core.editLogEntry(S, id, action, Date.now());
+  if (res.ok) { save(); refreshUi(); }
+  return { ok: res.ok, error: res.error || '', view: viewState() };
+});
 
 // A small window to jot a to-do down from the tray menu
 let quickWin = null;
@@ -447,7 +507,7 @@ function openQuickAdd() {
   if (!S.features.todos) { openSettings('general'); return; }
   if (quickWin && !quickWin.isDestroyed()) { quickWin.show(); quickWin.focus(); return; }
   quickWin = new BrowserWindow({
-    width: 460, height: 215, resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, show: false, title: 'Sip Quick Add',
+    width: 460, height: 250, resizable: false, minimizable: false, maximizable: false, alwaysOnTop: true, show: false, title: 'Sip Quick Add',
     autoHideMenuBar: true, backgroundColor: '#f6f8fa', icon: ICON,
     webPreferences: { ...SAFE_PREFS(), preload: path.join(APP_DIR, 'src', 'preload', 'quickadd-preload.js') },
   });
@@ -456,9 +516,9 @@ function openQuickAdd() {
   quickWin.on('closed', () => { quickWin = null; });
   quickWin.loadFile(path.join(RENDERER, 'quickadd', 'index.html'));
 }
-ipcMain.handle('quick:add', (e, text) => {
+ipcMain.handle('quick:add', (e, text, due, remind) => {
   if (!fromWin(e, quickWin)) throw new Error('blocked');
-  const r = todoAdd(text); return { ok: r.ok, error: r.error || '', open: S.todos.filter(t => !t.done).length };
+  const r = todoAdd(text, due, remind); return { ok: r.ok, error: r.error || '', open: S.todos.filter(t => !t.done).length };
 });
 ipcMain.on('quick:close', e => { if (fromWin(e, quickWin)) quickWin.close(); });
 
@@ -503,7 +563,7 @@ app.on('window-all-closed', () => { /* stay running in the tray */ });
 app.whenReady().then(() => {
   lockDownSession();
   load();
-  waterNextAt = Date.now() + S.water.interval * 60000;
+  waterNextAt = Core.gateWater(S, Date.now() + S.water.interval * 60000, Date.now());
   console.log(`Sip started (${process.platform}, Electron ${process.versions.electron}). Water ${S.water.enabled ? 'every ' + S.water.interval + ' min' : 'off'}; ${S.reminders.length} custom reminder(s).`);
   console.log(`Session: type=${process.env.XDG_SESSION_TYPE || '?'} wayland=${process.env.WAYLAND_DISPLAY || '-'} display=${process.env.DISPLAY || '-'} args=${process.argv.slice(1).join(' ')}`);
   applyLogin();
@@ -514,11 +574,14 @@ app.whenReady().then(() => {
   setTimeout(createOverlay, 400);                       // short delay helps transparency on Linux compositors
   setInterval(() => {
     const now = Date.now(); rollover();
-    if (!busy) {
+    const gated = Core.gateWater(S, waterNextAt, now); if (gated !== waterNextAt) { waterNextAt = gated; buildTray(); }       // the window closed or opened: the next ask is reset to its opening
+    if (!busy || (active && active.type === 'todos' && now - todoShownAt > 5 * 60000)) {
       const item = Core.pickNext(S, waterNextAt, now);
       if (item) {
         const r = item.type === 'reminder' ? S.reminders.find(x => x.id === item.id) : null;
-        appear('ask', r ? { type: 'reminder', id: r.id, title: r.title, note: r.note, late: now - r.nextAt > 90000 } : item);
+        const td = item.type === 'todo' ? S.todos.find(x => x.id === item.id) : null;
+        if (td) { if (appear('ask', { type: 'todo', id: td.id, title: td.text, note: dueNote(td, now), late: item.late })) { td.reminded = now; td.snoozeUntil = null; save(); } }
+        else appear('ask', r ? { type: 'reminder', id: r.id, title: r.title, note: r.note, late: now - r.nextAt > 90000 } : item);
       }
     } else if (overlay && !overlay.isDestroyed()) { overlay.setAlwaysOnTop(true, 'screen-saver'); overlay.moveTop(); }   // stay above other windows until answered
     if (++ticks % 12 === 0) refreshUi();

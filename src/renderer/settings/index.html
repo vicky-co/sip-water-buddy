@@ -15,6 +15,7 @@
     <div role="tablist" aria-orientation="vertical" id="tabs">
       <button type="button" role="tab" id="tab-characters" aria-controls="panel-characters" aria-selected="true" data-tab="characters"><span aria-hidden="true">🧑‍🚀</span> Characters</button>
       <button type="button" role="tab" id="tab-reminders" aria-controls="panel-reminders" aria-selected="false" tabindex="-1" data-tab="reminders"><span aria-hidden="true">⏰</span> Reminders</button>
+      <button type="button" role="tab" id="tab-today" aria-controls="panel-today" aria-selected="false" tabindex="-1" data-tab="today"><span aria-hidden="true">🗓️</span> Today</button>
       <button type="button" role="tab" id="tab-todos" aria-controls="panel-todos" aria-selected="false" tabindex="-1" data-tab="todos"><span aria-hidden="true">✅</span> To-dos</button>
       <button type="button" role="tab" id="tab-stats" aria-controls="panel-stats" aria-selected="false" tabindex="-1" data-tab="stats"><span aria-hidden="true">📊</span> Stats</button>
       <button type="button" role="tab" id="tab-sounds" aria-controls="panel-sounds" aria-selected="false" tabindex="-1" data-tab="sounds"><span aria-hidden="true">🔊</span> Sounds</button>
@@ -79,6 +80,14 @@
             <label class="field"><span>Daily goal</span><span class="inline"><input id="waterGoal" type="number" min="1" max="30" inputmode="numeric"> <span>glasses</span></span></label>
           </div>
           <div class="chips" id="waterChips" aria-label="Common intervals"></div>
+          <div class="winbox">
+            <label class="check"><input type="checkbox" id="winOn"> <span>Only ask during these hours</span></label>
+            <div class="fields" id="winFields">
+              <label class="field"><span>From</span><input id="winStart" type="time"></label>
+              <label class="field"><span>Until</span><input id="winEnd" type="time"></label>
+            </div>
+            <p class="hint small" id="winNote"></p>
+          </div>
           <div class="today">
             <span id="waterToday"></span>
             <span class="btns">
@@ -140,16 +149,41 @@
       </div>
     </section>
 
-        <!-- ===== To-dos ===== -->
+        <!-- ===== Today ===== -->
+    <section role="tabpanel" id="panel-today" aria-labelledby="tab-today" hidden>
+      <h1>Today</h1>
+      <p class="hint">Every check-in the hero and pet made today, and how you answered. If you tapped the wrong button you can change it here; Sip asks you to confirm first. The list starts fresh each day.</p>
+      <div class="tiles" id="todayTiles"></div>
+      <div class="card">
+        <ul class="logs" id="logList" aria-label="Today's check-ins"></ul>
+        <p class="hint" id="logEmpty">Nothing yet today. Check-ins appear here once you answer them.</p>
+      </div>
+    </section>
+
+    <!-- ===== To-dos ===== -->
     <section role="tabpanel" id="panel-todos" aria-labelledby="tab-todos" hidden>
       <h1>To-dos</h1>
       <div class="card">
         <form id="todoForm" class="todoadd" autocomplete="off">
           <input id="todoText" type="text" maxlength="120" placeholder="What do you need to do?" aria-label="New to-do">
           <button type="submit" class="btn primary">Add</button>
+          <div class="dueadd">
+            <span class="duelbl">Deadline (optional)</span>
+            <input id="todoDue" type="date" aria-label="Deadline date (optional)">
+            <input id="todoDueTime" type="time" aria-label="Deadline time (optional)" disabled>
+            <label class="sr" for="todoAddRemind">Reminder for this deadline</label>
+            <select id="todoAddRemind" title="Reminder for this deadline" disabled></select>
+            <button type="button" class="btn small" id="todoDueClear" hidden>Clear</button>
+          </div>
         </form>
         <p class="hint small" id="todoErr" role="alert" hidden></p>
         <p class="hint small">Tip: the tray menu has <strong>Quick add todo…</strong> so you can jot one down without opening Settings.</p>
+      </div>
+      <div class="card">
+        <div class="rowbetween"><h2>Deadline reminders</h2><button type="button" class="btn small" id="todoShowDesk">Show my todos on the desktop</button></div>
+        <label class="check"><input type="checkbox" id="todoRemOn"> <span>Remind me before a deadline</span></label>
+        <label class="field"><span>How long before</span><select id="todoRemBefore"></select></label>
+        <p class="hint small">The hero and pet appear with the reminder (Done, +10 min, +1 hour or Skip). A deadline without a time counts from 09:00 that day. Each to-do can use its own setting in the list below.</p>
       </div>
       <div class="card">
         <div class="rowbetween"><h2 id="todoCount">To do</h2><button type="button" class="btn small" id="todoClear">Clear completed</button></div>

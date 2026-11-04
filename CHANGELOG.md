@@ -4,6 +4,17 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-05
+### Added
+- **To-do deadlines**, optional, with a date and an optional time (Settings, Quick add, and editable in the list). Overdue items are marked in red and counted in the tray menu.
+- **Deadline reminders**: the hero and pet remind you before a deadline (Done, +10 min, +1 hour, Skip). A global "remind me N minutes before" setting, and a per-to-do choice that can differ or switch it off. A deadline without a time counts from 09:00 that day. Deadlines that passed more than 2 hours ago are shown as overdue but do not pop up.
+- **Show todos on the desktop**: the tray's *Show todos* (and a button in Settings) makes the hero and pet appear and hold your list. They do not move; tick items off right there; drag them (or the strip above the list) anywhere, and Sip remembers the spot. A check-in that falls due takes over after 5 minutes.
+- **Today tab**: every check-in answered today (water, reminders, to-dos) with a status you can change (Done, Skipped, Not yet) or remove. Each change is confirmed in a dialog that says what will change, and the glass count and skip totals follow. The list starts fresh each day.
+- **Water window** (Settings → Reminders): ask only between a start and an end time, also across midnight. After the end the next ask is reset to the start; editing the hours later (longer window, earlier start, switching it off) resumes or moves the asks immediately.
+### Fixed
+- The credit bar in Settings stays at the bottom of the window; only the tab content scrolls.
+- A to-do deadline of the wrong type sent to the app was silently dropped instead of refused.
+
 ## [2.2.0] - 2026-11-04
 ### Added
 - **To-do list**, switched on or off in Settings → General. A **To-dos** tab (add, tick, delete, clear completed) and two tray menu items: **Show todos** (with the number still open) and **Quick add todo…**, which opens a small window so you can jot one down without opening Settings.

@@ -62,3 +62,17 @@ button:focus-visible{outline:3px solid #5BB8E2;outline-offset:2px}
 #bText{display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 #bNote{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 #goRow{margin-top:6px}
+
+/* the to-do list on the desktop */
+#todoBox[hidden]{display:none}
+#tdGrip{cursor:grab;padding:2px 0 6px;font-size:15px;user-select:none}
+#tdGrip:active{cursor:grabbing}
+#tdList{list-style:none;margin:0;padding:0;max-height:128px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;min-width:230px}
+#tdList li{display:flex;align-items:flex-start;gap:7px;font-size:14px;font-weight:600;line-height:1.25;padding:2px 0}
+#tdList input{width:16px;height:16px;margin:2px 0 0;flex:none;accent-color:#16324F;cursor:pointer}
+#tdList label{cursor:pointer;overflow-wrap:anywhere}
+#tdList li.done label{text-decoration:line-through;opacity:.55;font-weight:500}
+#tdList .due{display:block;font-size:11.5px;font-weight:500;opacity:.8}
+#tdList li.late .due{color:#b3261e;font-weight:700;opacity:1}
+#tdEmpty{margin:4px 0;font-size:14px;font-weight:600}
+body.todo-mode #fig,body.todo-mode #dog{cursor:grab}
