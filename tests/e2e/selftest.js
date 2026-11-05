@@ -1,7 +1,7 @@
 'use strict';
 // End-to-end check: launches the real app (main process, both windows, real preload scripts) and drives it.
 //   xvfb-run -a electron --no-sandbox --disable-gpu tests/e2e/selftest.js
-const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog, screen } = require('electron');
 const Brand = require('../../src/main/branding.js');
 const opened = []; shell.openExternal = async u => { opened.push(u); };       // never open a real browser during the test
 const path = require('path'), fs = require('fs');
@@ -11,6 +11,8 @@ app.setPath('userData', DATA);
 const results = [], consoleMsgs = [];
 const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail !== undefined ? '  -> ' + JSON.stringify(detail) : '')); };
 app.on('web-contents-created', (_e, wc) => wc.on('console-message', ev => consoleMsgs.push({ level: ev.level, msg: String(ev.message).slice(0, 300) })));
+// the test is also the "mouse": a pointer that rests somewhere on the virtual screen must not decide which checks pass
+let fakeCursor = { x: -50, y: -50 };                                           // installed as screen.getCursorScreenPoint once the app is ready
 const dialogCalls = []; let dialogAnswer = 0;                                       // the test answers the confirmation dialogs: 0 = confirm, 1 = cancel
 dialog.showMessageBox = async (...a) => { dialogCalls.push(a[a.length - 1]); return { response: dialogAnswer }; };
 let trayMenu = [];                                                               // the tray menu as Sip last built it, so the test can click its items
@@ -24,6 +26,7 @@ const run = (w, code) => w.webContents.executeJavaScript(code, true).catch(e => 
 const shot = async (w, name) => { try { const img = await w.webContents.capturePage(); fs.writeFileSync(path.join(SHOTS, name + '.png'), img.toPNG()); } catch (e) { console.log('shot failed', name, e.message); } };
 
 app.whenReady().then(async () => {
+  screen.getCursorScreenPoint = () => fakeCursor;
   try {
     const overlay = await waitFor(() => win('Sip'), 20000); check('character window created', !!overlay);
     await waitFor(() => run(overlay, "typeof window.sip === 'object' && !!document.getElementById('bubble')"), 20000);
@@ -101,8 +104,6 @@ app.whenReady().then(async () => {
     await run(sw, "sipSettings.patch({ show: 'both' })");
 
     // ---- 2.1: the question comes with the character, hovering stops them, leaving is configurable, waiting spot ----
-    const { screen } = require('electron');
-    let fakeCursor = { x: -50, y: -50 }; screen.getCursorScreenPoint = () => fakeCursor;       // the test is the "mouse"
     const bnds = () => { const b = overlay.getBounds(); return b.x + ',' + b.y; };
     await run(sw, "sipSettings.patch({ behavior: { leave: 'instant' } })");
     let t0 = Date.now(); await run(sw, "sipSettings.askNow()");
@@ -163,7 +164,6 @@ app.whenReady().then(async () => {
     await run(sw, "sipSettings.patch({ behavior: { leave: 'normal' } })");
     check('Settings has the leave-time options and an uninstall button', await run(sw, "document.querySelector('#tab-general').click() || (!!document.querySelector('input[name=leave][value=custom]') && !!document.getElementById('uninstall') && typeof sipSettings.uninstall === 'function')"));
     await sleep(300); await shot(sw, 'settings-general');
-    screen.getCursorScreenPoint = require('electron').screen.getCursorScreenPoint;
 
     // ---- 2.2: to-do list, quick add from the tray, and the 30-day statistics ----
     const menuItem = label => trayMenu.find(i => i.label && i.label.startsWith(label));
@@ -274,12 +274,19 @@ app.whenReady().then(async () => {
 
     // ---- 2.3: to-do reminders, the day log, and the to-do list on the desktop ----
     // another check-in (a custom reminder that fell due, a water ask) may be on screen: answer it so the character is free for what the test needs
-    const clearOverlay = async () => { for (let i = 0; i < 6 && overlay.isVisible(); i++) { await run(overlay, "(() => { const id = !document.getElementById('todoBox').hidden ? 'tdClose' : !document.getElementById('bActions').hidden && !document.getElementById('remBtns').hidden ? 'remSkip' : !document.getElementById('bActions').hidden && !document.getElementById('waterBtns').hidden ? 'skip' : !document.getElementById('bActions').hidden && !document.getElementById('helloBtns').hidden ? 'helloClose' : null; if (id) document.getElementById(id).click(); })()"); await waitFor(() => !overlay.isVisible(), 25000, 200); } };
+    // One click on whatever check-in is really showing its buttons (never on a window that is still drawing); returns what it clicked.
+    const answerShown = () => run(overlay, "(() => { const vis = id => { const e = document.getElementById(id); return e && !e.hidden; }; const id = vis('todoBox') ? 'tdClose' : vis('bActions') && vis('remBtns') ? 'remSkip' : vis('bActions') && vis('waterBtns') ? 'skip' : vis('bActions') && vis('helloBtns') ? 'helloClose' : null; if (id) document.getElementById(id).click(); return id; })()");
+    const clearOverlay = async () => { const t0 = Date.now(); while (overlay.isVisible() && Date.now() - t0 < 90000) { await answerShown(); await sleep(400); } };
+    // answer with a button and press Go now straight away: the answer is applied when the goodbye ends, and a slow machine draws it slowly
+    const answerAndGo = id => run(overlay, `(() => { document.getElementById('${id}').click(); document.getElementById('goNow').click(); })()`);
+    // wait for the reminder of one named to-do; any other check-in that turns up first is answered out of the way
     const waitTodoReminder = name => waitFor(async () => {
-      const txt = await run(overlay, "document.getElementById('bText').textContent"), vis = overlay.isVisible();
-      if (vis && !txt.startsWith('To do: ' + name)) { await clearOverlay(); return false; }
-      return vis && await run(overlay, "!document.getElementById('remBtns').hidden");
-    }, 60000, 250);
+      if (!overlay.isVisible()) return false;
+      const st = await run(overlay, "({ text: document.getElementById('bText').textContent, rem: !document.getElementById('remBtns').hidden && !document.getElementById('bActions').hidden })");
+      if (st.rem && st.text.startsWith('To do: ' + name)) return true;
+      if (!st.text.startsWith('To do: ' + name)) await answerShown();                       // somebody else's check-in is on screen (or nothing answerable yet: then this does nothing)
+      return false;
+    }, 90000, 300);
     await clearOverlay();
     await run(sw, "sipSettings.patch({ behavior: { leave: 'instant' } })");                                  // short goodbyes: the answers below are applied when they end, and CI draws slowly
     await run(sw, "sipSettings.getState().then(s => Promise.all(s.todos.map(t => sipSettings.todoDelete(t.id))))");
@@ -294,17 +301,17 @@ app.whenReady().then(async () => {
     check('a to-do reminder: the character appears with the to-do and its deadline', await waitTodoReminder('Pay the rent') && await run(overlay, "/Due/.test(document.getElementById('bNote').textContent)"));
     await sleep(6000);
     check('the to-do with "No reminder" was not reminded, and the other is not repeated', await run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Quiet one').reminded === null && s.todos.find(t => t.text === 'Pay the rent').reminded > 0)") && await run(overlay, "/^To do: Pay the rent/.test(document.getElementById('bText').textContent)"));
-    await run(overlay, "document.getElementById('remS10').click()");
-    check('+10 min snoozes the to-do reminder', await waitFor(() => !overlay.isVisible(), 20000, 200));
+    await answerAndGo('remS10');
+    check('+10 min snoozes the to-do reminder', await waitFor(() => !overlay.isVisible(), 90000, 250));
     const sn = await run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Pay the rent'))");
     check('...it is not marked done and the delay is recorded', !sn.done && sn.reminded > 0, sn);
     // answering "Done" from the character marks the to-do done: simulate it coming due again
     await run(sw, "sipSettings.patch({ todoRemind: { enabled: false } })");
     await run(sw, `sipSettings.todoDue('${sn.id}', '${hhmm(Date.now() + 10 * 60000)}').then(() => sipSettings.todoRemind('${sn.id}', 15)).then(() => sipSettings.patch({ todoRemind: { enabled: true } }))`);
     check('re-arming: a changed deadline brings the reminder back', await waitTodoReminder('Pay the rent'));
-    await run(overlay, "document.getElementById('remDone').click()");
-    check('Done on the reminder marks the to-do done (when the goodbye finishes)', await waitFor(() => run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Pay the rent').done === true)"), 30000, 200));
-    await waitFor(() => !overlay.isVisible(), 20000, 200);
+    await answerAndGo('remDone');
+    check('Done on the reminder marks the to-do done (when the goodbye finishes)', await waitFor(() => run(sw, "sipSettings.getState().then(s => s.todos.find(t => t.text === 'Pay the rent').done === true)"), 90000, 250));
+    await waitFor(() => !overlay.isVisible(), 90000, 250);
     check('the to-do answers are in today\'s log', await run(sw, "sipSettings.getState().then(s => { const l = s.dayLog.filter(e => e.type === 'todo' && e.title === 'Pay the rent').map(e => e.action); return l.join() === 'snooze,done'; })"));
     // quick add carries the reminder choice
     menuItem('Quick add todo').click(); const qw3 = await waitFor(() => win('Sip Quick Add'), 10000);
@@ -364,6 +371,7 @@ app.whenReady().then(async () => {
     menuItem('Show todos').click();
     check('next time the list opens where it was left', await waitFor(() => { const b = overlay.getBounds(); return overlay.isVisible() && Math.abs(b.x - b1.x) <= 3 && Math.abs(b.y - b1.y) <= 3; }, 15000, 150));
     // a drag that starts on the dog works too, and the grip above the list as well
+    await waitFor(() => run(overlay, "document.body.classList.contains('todo-mode') && document.querySelectorAll('#tdList li').length > 0"), 15000, 150);   // the window shows before the page has processed the message
     const b2 = overlay.getBounds();
     await run(overlay, `(() => { const g = document.getElementById('tdGrip'), r = g.getBoundingClientRect(); const ev = (t, x, y) => new MouseEvent(t, { bubbles: true, clientX: x, clientY: y, screenX: x + ${b2.x}, screenY: y + ${b2.y}, button: 0 }); g.dispatchEvent(ev('mousedown', r.left + 10, r.top + 5)); window.dispatchEvent(ev('mousemove', r.left + 60, r.top + 25)); window.dispatchEvent(ev('mouseup', r.left + 60, r.top + 25)); })()`);
     await sleep(900); const b3 = overlay.getBounds();
@@ -384,7 +392,7 @@ app.whenReady().then(async () => {
     const urlBefore = sw.webContents.getURL();
     await run(sw, "document.querySelector('.brandbar a[data-link=linkedin]').click()"); await sleep(600);
     check('clicking the LinkedIn link opens it in the browser, not in the app', opened.includes(Brand.linkedinUrl) && sw.webContents.getURL() === urlBefore, opened);
-    check('an arbitrary address cannot be opened', await run(sw, "sipSettings.openLink('https://evil.example/phish').then(r => r.ok === false)") && await run(sw, "sipSettings.openLink('../../etc/passwd').then(r => r.ok === false)") && await run(sw, "sipSettings.openLink(['repo']).then(r => r.ok === false)") && await run(sw, "sipSettings.openLink({ toString() { return 'repo'; } }).then(r => r.ok === false, () => true)") && !opened.some(u => /evil|passwd/.test(u)));
+    check('an arbitrary address cannot be opened', await run(sw, "sipSettings.openLink('https://evil.example/phish').then(r => r.ok === false)") && await run(sw, "sipSettings.openLink('../../etc/passwd').then(r => r.ok === false)") && await run(sw, "sipSettings.openLink(['repo']).then(r => r.ok === false)") && await run(sw, "(() => { try { return Promise.resolve(sipSettings.openLink({ toString() { return 'repo'; } })).then(r => r.ok === false, () => true); } catch (e) { return true; } })()") && !opened.some(u => /evil|passwd/.test(u)));
     for (const k of ['repo', 'issues', 'github']) await run(sw, `sipSettings.openLink('${k}')`);
     check('exactly the four configured https addresses can be opened', [Brand.repoUrl, Brand.issuesUrl, Brand.profileUrl, Brand.linkedinUrl].every(u => u.startsWith('https://') && opened.includes(u)) && opened.every(u => [Brand.repoUrl, Brand.issuesUrl, Brand.profileUrl, Brand.linkedinUrl].includes(u)), opened);
     await run(sw, "document.querySelector('#tab-sounds').click()"); await sleep(300); await shot(sw, 'settings-sounds');

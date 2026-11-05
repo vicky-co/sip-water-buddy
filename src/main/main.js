@@ -264,6 +264,7 @@ function finish(info) {
   info = info && typeof info === 'object' ? info : {};
   const clean = { type: ['water', 'reminder', 'todo', 'todos', 'hello'].includes(info.type) ? info.type : 'hello', id: typeof info.id === 'string' ? info.id.slice(0, 40) : '',
     action: ['done', 'skip', 'snooze'].includes(info.action) ? info.action : '', minutes: Number.isFinite(info.minutes) ? info.minutes : undefined, preview: info.preview === true };
+  console.log(`Answered (${clean.type}${clean.action ? ': ' + clean.action : ''})`);
   rollover();
   waterNextAt = Core.gateWater(S, Core.applyFinish(S, clean, Date.now(), waterNextAt, () => crypto.randomUUID()), Date.now());
   busy = false; active = null;
