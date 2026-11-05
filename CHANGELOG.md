@@ -11,7 +11,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Show todos on the desktop**: the tray's *Show todos* (and a button in Settings) makes the hero and pet appear and hold your list. They do not move; tick items off right there; drag them (or the strip above the list) anywhere, and Sip remembers the spot. A check-in that falls due takes over after 5 minutes.
 - **Today tab**: every check-in answered today (water, reminders, to-dos) with a status you can change (Done, Skipped, Not yet) or remove. Each change is confirmed in a dialog that says what will change, and the glass count and skip totals follow. The list starts fresh each day.
 - **Water window** (Settings → Reminders): ask only between a start and an end time, also across midnight. After the end the next ask is reset to the start; editing the hours later (longer window, earlier start, switching it off) resumes or moves the asks immediately.
+### Changed
+- Runtime updated from Electron 44 to **Electron 45** (45.2.1). Tested with the full end-to-end suite on a fresh install.
 ### Fixed
+- A mouse pointer that is simply resting where the hero and pet appear no longer pauses them. Hovering pauses them only after the pointer has moved onto them (before, a resting pointer could keep the start-up greeting from ever showing its question).
 - The credit bar in Settings stays at the bottom of the window; only the tab content scrolls.
 - A to-do deadline of the wrong type sent to the app was silently dropped instead of refused.
 

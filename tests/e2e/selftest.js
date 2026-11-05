@@ -1,7 +1,7 @@
 'use strict';
 // End-to-end check: launches the real app (main process, both windows, real preload scripts) and drives it.
 //   xvfb-run -a electron --no-sandbox --disable-gpu tests/e2e/selftest.js
-const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog, screen } = require('electron');
 const Brand = require('../../src/main/branding.js');
 const opened = []; shell.openExternal = async u => { opened.push(u); };       // never open a real browser during the test
 const path = require('path'), fs = require('fs');
@@ -11,6 +11,8 @@ app.setPath('userData', DATA);
 const results = [], consoleMsgs = [];
 const check = (name, ok, detail) => { results.push({ name, ok: !!ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail !== undefined ? '  -> ' + JSON.stringify(detail) : '')); };
 app.on('web-contents-created', (_e, wc) => wc.on('console-message', ev => consoleMsgs.push({ level: ev.level, msg: String(ev.message).slice(0, 300) })));
+// the test is also the "mouse": a pointer that rests somewhere on the virtual screen must not decide which checks pass
+let fakeCursor = { x: -50, y: -50 };                                           // installed as screen.getCursorScreenPoint once the app is ready
 const dialogCalls = []; let dialogAnswer = 0;                                       // the test answers the confirmation dialogs: 0 = confirm, 1 = cancel
 dialog.showMessageBox = async (...a) => { dialogCalls.push(a[a.length - 1]); return { response: dialogAnswer }; };
 let trayMenu = [];                                                               // the tray menu as Sip last built it, so the test can click its items
@@ -24,6 +26,7 @@ const run = (w, code) => w.webContents.executeJavaScript(code, true).catch(e => 
 const shot = async (w, name) => { try { const img = await w.webContents.capturePage(); fs.writeFileSync(path.join(SHOTS, name + '.png'), img.toPNG()); } catch (e) { console.log('shot failed', name, e.message); } };
 
 app.whenReady().then(async () => {
+  screen.getCursorScreenPoint = () => fakeCursor;
   try {
     const overlay = await waitFor(() => win('Sip'), 20000); check('character window created', !!overlay);
     await waitFor(() => run(overlay, "typeof window.sip === 'object' && !!document.getElementById('bubble')"), 20000);
@@ -101,8 +104,6 @@ app.whenReady().then(async () => {
     await run(sw, "sipSettings.patch({ show: 'both' })");
 
     // ---- 2.1: the question comes with the character, hovering stops them, leaving is configurable, waiting spot ----
-    const { screen } = require('electron');
-    let fakeCursor = { x: -50, y: -50 }; screen.getCursorScreenPoint = () => fakeCursor;       // the test is the "mouse"
     const bnds = () => { const b = overlay.getBounds(); return b.x + ',' + b.y; };
     await run(sw, "sipSettings.patch({ behavior: { leave: 'instant' } })");
     let t0 = Date.now(); await run(sw, "sipSettings.askNow()");
@@ -163,7 +164,6 @@ app.whenReady().then(async () => {
     await run(sw, "sipSettings.patch({ behavior: { leave: 'normal' } })");
     check('Settings has the leave-time options and an uninstall button', await run(sw, "document.querySelector('#tab-general').click() || (!!document.querySelector('input[name=leave][value=custom]') && !!document.getElementById('uninstall') && typeof sipSettings.uninstall === 'function')"));
     await sleep(300); await shot(sw, 'settings-general');
-    screen.getCursorScreenPoint = require('electron').screen.getCursorScreenPoint;
 
     // ---- 2.2: to-do list, quick add from the tray, and the 30-day statistics ----
     const menuItem = label => trayMenu.find(i => i.label && i.label.startsWith(label));
@@ -371,6 +371,7 @@ app.whenReady().then(async () => {
     menuItem('Show todos').click();
     check('next time the list opens where it was left', await waitFor(() => { const b = overlay.getBounds(); return overlay.isVisible() && Math.abs(b.x - b1.x) <= 3 && Math.abs(b.y - b1.y) <= 3; }, 15000, 150));
     // a drag that starts on the dog works too, and the grip above the list as well
+    await waitFor(() => run(overlay, "document.body.classList.contains('todo-mode') && document.querySelectorAll('#tdList li').length > 0"), 15000, 150);   // the window shows before the page has processed the message
     const b2 = overlay.getBounds();
     await run(overlay, `(() => { const g = document.getElementById('tdGrip'), r = g.getBoundingClientRect(); const ev = (t, x, y) => new MouseEvent(t, { bubbles: true, clientX: x, clientY: y, screenX: x + ${b2.x}, screenY: y + ${b2.y}, button: 0 }); g.dispatchEvent(ev('mousedown', r.left + 10, r.top + 5)); window.dispatchEvent(ev('mousemove', r.left + 60, r.top + 25)); window.dispatchEvent(ev('mouseup', r.left + 60, r.top + 25)); })()`);
     await sleep(900); const b3 = overlay.getBounds();
@@ -391,7 +392,7 @@ app.whenReady().then(async () => {
     const urlBefore = sw.webContents.getURL();
     await run(sw, "document.querySelector('.brandbar a[data-link=linkedin]').click()"); await sleep(600);
     check('clicking the LinkedIn link opens it in the browser, not in the app', opened.includes(Brand.linkedinUrl) && sw.webContents.getURL() === urlBefore, opened);
-    check('an arbitrary address cannot be opened', await run(sw, "sipSettings.openLink('https://evil.example/phish').then(r => r.ok === false)") && await run(sw, "sipSettings.openLink('../../etc/passwd').then(r => r.ok === false)") && await run(sw, "sipSettings.openLink(['repo']).then(r => r.ok === false)") && await run(sw, "sipSettings.openLink({ toString() { return 'repo'; } }).then(r => r.ok === false, () => true)") && !opened.some(u => /evil|passwd/.test(u)));
+    check('an arbitrary address cannot be opened', await run(sw, "sipSettings.openLink('https://evil.example/phish').then(r => r.ok === false)") && await run(sw, "sipSettings.openLink('../../etc/passwd').then(r => r.ok === false)") && await run(sw, "sipSettings.openLink(['repo']).then(r => r.ok === false)") && await run(sw, "(() => { try { return Promise.resolve(sipSettings.openLink({ toString() { return 'repo'; } })).then(r => r.ok === false, () => true); } catch (e) { return true; } })()") && !opened.some(u => /evil|passwd/.test(u)));
     for (const k of ['repo', 'issues', 'github']) await run(sw, `sipSettings.openLink('${k}')`);
     check('exactly the four configured https addresses can be opened', [Brand.repoUrl, Brand.issuesUrl, Brand.profileUrl, Brand.linkedinUrl].every(u => u.startsWith('https://') && opened.includes(u)) && opened.every(u => [Brand.repoUrl, Brand.issuesUrl, Brand.profileUrl, Brand.linkedinUrl].includes(u)), opened);
     await run(sw, "document.querySelector('#tab-sounds').click()"); await sleep(300); await shot(sw, 'settings-sounds');

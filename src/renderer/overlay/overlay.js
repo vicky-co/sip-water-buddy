@@ -773,7 +773,7 @@
     D.x = FOLLOW_X; D.face = 1;
     if (clickThrough) clickThrough.reset();
     bubble.hidden = true; stage.style.opacity = 0; showAsk.said = false;
-    armedPt = null;
+    armedPt = cursor ? { x: cursor.x, y: cursor.y } : 'pending';      // a mouse that is just resting where they appear does not count as hovering until it moves
     asking = false; leaving = false; pendingAsk = false; waitedHere = !!d.parked; bText.hidden = false; goRow.hidden = true; hideAt = 0;
     askItem = d.item || { type: 'water' };
     askMode = askItem.type === 'reminder' ? 'reminder' : askItem.type === 'todo' ? 'todo' : askItem.type === 'hello' ? 'hello' : 'water';
